@@ -1,0 +1,8 @@
+fpdf2==2.7.9
+paramiko==2.12.0
+streamlit==1.24.0
+streamlit-option-menu==0.3.6
+mysql-connector-python==8.0.33
+pandas==1.5.3
+numpy==1.25.2
+
