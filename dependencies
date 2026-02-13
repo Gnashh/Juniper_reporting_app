@@ -6,4 +6,6 @@ mysql-connector-python==8.0.33
 pandas==1.5.3
 numpy==1.25.2
 python-dotenv==1.0.0
+groq-client==0.1.1
+reportlab==3.6.12
 
