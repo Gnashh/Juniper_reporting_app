@@ -1,13 +1,19 @@
 import mysql.connector
 from mysql.connector import Error
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def connect_to_db():
     try:
         connection = mysql.connector.connect(
-            host='localhost',
-            database='internship',
-            user='root',
-            password='S9kx7A4a#gnash',
+            host=os.getenv('DB_HOST', 'localhost'),
+            database=os.getenv('DB_NAME', 'internship'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD'),
+            port=int(os.getenv('DB_PORT', 3306)),
             connection_timeout=3,
             autocommit=True
         )

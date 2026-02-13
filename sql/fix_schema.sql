@@ -34,6 +34,7 @@ CREATE TABLE command_templates (
     customer_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     jump_host BOOLEAN DEFAULT FALSE,
+    general_description TEXT
     
     FOREIGN KEY (customer_id) REFERENCES customers(id)
         ON DELETE CASCADE,
@@ -45,7 +46,7 @@ CREATE TABLE reports (
     device_id INT NOT NULL,
     customer_id INT NOT NULL,
     template_id INT NOT NULL,
-    result TEXT NOT NULL,
+    result LONGTEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (device_id) REFERENCES devices(id)
@@ -59,6 +60,9 @@ CREATE TABLE reports (
     INDEX (template_id),
     INDEX (customer_id)
 );
+
+
+
 
 
 

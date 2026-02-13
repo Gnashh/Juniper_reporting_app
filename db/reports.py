@@ -5,18 +5,25 @@ from fpdf import FPDF
 from db.devices import get_device_by_id
 from db.customer import get_customer_by_id
 from db.templates import get_template_by_id
+import json
 
 
 
 pdf = FPDF()
 
-def create_report(device_id, customer_id, template_id, result):
+def create_report(device_id, customer_id, template_id, results):
     conn = connect_to_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO reports (device_id, customer_id, template_id, result) VALUES (%s, %s, %s, %s)", 
-                   (device_id, customer_id, template_id, result))
+    # Convert results to JSON string
+    results_json = json.dumps(results)
+    
+    cursor.execute("""
+        INSERT INTO reports (device_id, customer_id, template_id, result)
+        VALUES (%s, %s, %s, %s)
+    """, (device_id, customer_id, template_id, results_json))
+    
     conn.commit()
-    return cursor.lastrowid
+    conn.close()
 
 def get_reports():
     conn = connect_to_db()
