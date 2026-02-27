@@ -1,7 +1,16 @@
-import mysql.connector    # import mysql.connector  
+"""
+Customer Database Module
+======================
+CRUD operations for the customers table.
+Supports jump host configuration and optional logo image storage.
+"""
+
+import mysql.connector
 from db.connect_to_db import connect_to_db
 
+
 def get_customers():
+    """Fetch all customers; returns list of tuples."""
     conn = connect_to_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM customers")
@@ -9,6 +18,7 @@ def get_customers():
     return customers
 
 def get_customer_by_id(id):
+    """Fetch a single customer by ID; returns dict or None."""
     conn = connect_to_db()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM customers WHERE id = %s", (id,))
@@ -16,6 +26,7 @@ def get_customer_by_id(id):
     return customer
 
 def create_customer(name, email, jump_host, jump_host_ip=None, jump_host_username=None, jump_host_password=None, image=None):
+    """Insert a new customer; returns the new row id."""
     conn = connect_to_db()
     cursor = conn.cursor()
     
@@ -32,6 +43,7 @@ def create_customer(name, email, jump_host, jump_host_ip=None, jump_host_usernam
     return cursor.lastrowid
 
 def update_customer(id, name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image=None):
+    """Update customer; image is only updated if a new file is provided."""
     conn = connect_to_db()
     cursor = conn.cursor()
     
@@ -53,6 +65,7 @@ def update_customer(id, name, email, jump_host, jump_host_ip, jump_host_username
     return cursor.rowcount
 
 def delete_customer(id):
+    """Permanently delete a customer by ID."""
     conn = connect_to_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM customers WHERE id = %s", (id,))

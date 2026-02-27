@@ -1,12 +1,23 @@
+"""
+Database Connection Module
+=========================
+Provides MySQL connection using credentials from environment variables.
+Handles common connection errors with meaningful messages.
+"""
+
 import mysql.connector
 from mysql.connector import Error
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
+
 def connect_to_db():
+    """
+    Create a MySQL connection using DB_HOST, DB_NAME, DB_USER, DB_PASSWORD, DB_PORT.
+    Raises Exception with descriptive message on failure.
+    """
     try:
         connection = mysql.connector.connect(
             host=os.getenv('DB_HOST', 'localhost'),

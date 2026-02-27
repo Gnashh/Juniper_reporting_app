@@ -16,38 +16,91 @@ from db.reports import get_report_by_id, create_report, delete_report
 from juniper_service import connect_to_device, close_connection, run_command, connect_via_jump_host
 from gen_PDF import generate_pdf
 from PIL import Image
+from auth import require_authentication, logout_user, get_current_user, is_admin
+from user_management import show_user_management
 
+# -----------------------------
+# Authentication Check
+# -----------------------------
+# This must be called before any other Streamlit code
+require_authentication()
 
 # -----------------------------
 # Page config
 # -----------------------------
 st.set_page_config(
-    page_title="Internship",
+    page_title="Report App",
     page_icon=":bar_chart:",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("Simple Reporting App")
+# Get current user info
+current_user = get_current_user()
+
+st.title("Reporting App")
+if current_user:
+    st.caption(f"👤 Logged in as: **{current_user['full_name'] or current_user['username']}**")
 
 # -----------------------------
 # Sidebar menu
 # -----------------------------
 with st.sidebar:
+    # Build menu options based on user role
+    menu_options = [
+        "Customer Details",
+        "Device Details",
+        "Template Details",
+        "Report Details and Generate Report"
+    ]
+
+    # Add User Management for admins
+    if is_admin():
+        menu_options.append("User Management")
+
     selected = option_menu(
         menu_title="MAIN MENU",
-        options=[
-            "Customer Details",
-            "Device Details",
-            "Template Details",
-            "Report Details and Generate Report"
-        ]
+        options=menu_options
     )
+
+    st.markdown("---")
+
+    # User info and logout button
+    if current_user:
+        st.markdown(f"**👤 User:** {current_user['username']}")
+        if current_user.get('is_admin'):
+            st.markdown("**🔑 Role:** Administrator")
+        else:
+            st.markdown("**🔑 Role:** User")
+
+        if st.button("🚪 Logout", use_container_width=True):
+            logout_user()
+            st.rerun()
+
+# -----------------------------
+# Dismiss Handlers
+# -----------------------------
+def create_dismiss_handler(dialog_key, cleanup_keys=None):
+    """
+    Universal dismiss handler factory.
+    
+    Args:
+        dialog_key: The session state key for the dialog (e.g., 'show_add_customer')
+        cleanup_keys: Optional list of session state keys to delete on dismiss
+    """
+    def handler():
+        st.session_state[dialog_key] = False
+        if cleanup_keys:
+            for key in cleanup_keys:
+                if key in st.session_state:
+                    del st.session_state[key]
+    return handler
 
 # -----------------------------
 # Customer Dialogs
 # -----------------------------
-@st.dialog("Add New Customer")
+
+@st.dialog("Add New Customer", on_dismiss=create_dismiss_handler("show_add_customer"), width="medium")
 def add_customer_dialog():
     # Jump host selection OUTSIDE form for dynamic updates
     jump_host = st.radio("Jump Host?", ["No", "Yes"], index=0, key="add_customer_jump_host")
@@ -107,7 +160,7 @@ def add_customer_dialog():
         st.error(f"Failed to add customer: {str(e)}")
 
 
-@st.dialog("Confirm Delete")
+@st.dialog("Confirm Delete", on_dismiss=create_dismiss_handler("show_delete_customer"), width="small")
 def delete_customer_dialog(customer_ids):
     st.warning(f"⚠️ Are you sure you want to delete {len(customer_ids)} customer(s)?")
     st.caption("This action cannot be undone.")
@@ -130,7 +183,7 @@ def delete_customer_dialog(customer_ids):
                 st.error(f"Failed to delete customers: {str(e)}")
 
 
-@st.dialog("Update Customer(s)")
+@st.dialog("Update Customer(s)", on_dismiss=create_dismiss_handler("show_update_customer", ["update_forms_data"]), width="medium")
 def update_customer_dialog(selected_customers):
     """
     Fixed dialog that handles updating multiple customers at once.
@@ -265,7 +318,7 @@ def update_customer_dialog(selected_customers):
 # -----------------------------
 # Device Dialogs
 # -----------------------------
-@st.dialog("Add New Device")
+@st.dialog("Add New Device", on_dismiss=create_dismiss_handler("show_add_device"), width="medium")
 def add_device_dialog():
     with st.form("add_device_form", clear_on_submit=True):
         # Get customers
@@ -313,7 +366,7 @@ def add_device_dialog():
     except Exception as e:
         st.error(f"Failed to add device: {str(e)}")
 
-@st.dialog("Confirm Delete Devices")
+@st.dialog("Confirm Delete Devices", on_dismiss=create_dismiss_handler("show_delete_device"), width="small")
 def delete_device_dialog(device_ids):
     st.warning(f"⚠️ Are you sure you want to delete {len(device_ids)} device(s)?")
     st.caption("This action cannot be undone.")
@@ -336,7 +389,7 @@ def delete_device_dialog(device_ids):
                 st.error(f"Failed to delete devices: {str(e)}")
 
 
-@st.dialog("Update Device(s)")
+@st.dialog("Update Device(s)", on_dismiss=create_dismiss_handler("show_update_device", ["update_forms_data"]), width="medium")
 def update_device_dialog(selected_devices):
     """Update multiple devices at once"""
     st.write(f"Updating {len(selected_devices)} device(s)")
@@ -447,73 +500,133 @@ def update_device_dialog(selected_devices):
 # -----------------------------
 # Template Dialogs
 # -----------------------------
-@st.dialog("Add New Template")
+@st.dialog("Add New Template", on_dismiss=create_dismiss_handler("show_add_template", ["commands"]), width="large")
 def add_template_dialog():
-    
     # Initialize commands in session state
     if "commands" not in st.session_state:
         st.session_state.commands = []
-
-    # Jump host selection OUTSIDE form for dynamic updates
-    jump_host = st.radio("Jump Host?", ["No", "Yes"], index=0, key="add_template_jump_host")
-
-    # Get and filter customers OUTSIDE form
+    
+    # Get customers
     customers_data = get_customers()
-    customers_df = pd.DataFrame(customers_data, columns=["id", "name", "email",  "jump_host", "created_at", "jump_host_ip", "jump_host_username", "jump_host_password", "images"])
+    customers_df = pd.DataFrame(customers_data, columns=["id", "name", "email", "jump_host", "created_at", "jump_host_ip", "jump_host_username", "jump_host_password", "images"])
     
-    # Filter customers based on jump_host selection
-    if jump_host == "Yes":
-        filtered_customers = customers_df[customers_df['jump_host'] == 1]
-    else:
-        filtered_customers = customers_df  # Show ALL customers when "No" is selected
+    customers = {row['name']: row['id'] for _, row in customers_df.iterrows()}
+    selected_customer_name = st.selectbox("Customer", list(customers.keys()))
+    customer_id = customers[selected_customer_name]
     
-    if filtered_customers.empty:
-        st.warning(f"No customers found with jump host = {jump_host}")
-        st.info("Please create a customer with the appropriate jump host setting first, or change the jump host selection above.")
-        if st.button("Close"):
-            st.session_state.show_add_template = False
-            st.rerun()
-        return
-    
-    # Customer selection OUTSIDE form so it can trigger updates
-    customer_options = {row['name']: row['id'] for _, row in filtered_customers.iterrows()}
-    selected_customer_name = st.selectbox("Customer", list(customer_options.keys()), key="template_customer_select")
-    customer_id = customer_options[selected_customer_name]
-    
-    # Template name and general description OUTSIDE form
     name = st.text_input("Template Name")
     general_description = st.text_area("Template Description", placeholder="Describe what this template is for...")
 
-    # Three buttons OUTSIDE form for managing command forms
-    col1, col2, col3 = st.columns(3)
+    # Manual Summary Option
+    st.markdown("---")
+    st.markdown("### 📊 Manual Summary Configuration")
+    
+    manual_summary = st.radio(
+        "Enable Manual Summary",
+        ["No", "Yes"],
+        horizontal=True,
+        help="Add a custom summary table to the report"
+    )
+    
+    manual_summary_desc = ""
+    manual_summary_table = []
+    
+    if manual_summary == "Yes":
+        manual_summary_desc = st.text_area(
+            "Summary Description",
+            placeholder="Enter a description for the manual summary section...",
+            height=100
+        )
+        
+        st.markdown("**Summary Table Fields**")
+        st.caption("Define the fields that will appear in the summary table")
+        
+        # Initialize table fields in session state
+        if "summary_fields" not in st.session_state:
+            st.session_state.summary_fields = [{"field": "", "value": ""}]
+        
+        # Buttons for managing table fields
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("➕ Add Field", use_container_width=True):
+                st.session_state.summary_fields.append({"field": "", "value": ""})
+                st.rerun()
+        with col2:
+            if st.button("🗑️ Remove Last Field", use_container_width=True, disabled=len(st.session_state.summary_fields) <= 1):
+                if len(st.session_state.summary_fields) > 1:
+                    st.session_state.summary_fields.pop()
+                    st.rerun()
+        
+        # Display table fields
+        for idx, field_data in enumerate(st.session_state.summary_fields):
+            col1, col2 = st.columns(2)
+            with col1:
+                field_name = st.text_input(
+                    f"Field Name {idx + 1}",
+                    value=field_data.get("field", ""),
+                    key=f"field_name_{idx}",
+                    placeholder="e.g., Device Model"
+                )
+            with col2:
+                field_value = st.text_input(
+                    f"Default Value {idx + 1}",
+                    value=field_data.get("value", ""),
+                    key=f"field_value_{idx}",
+                    placeholder="e.g., MX480"
+                )
+            
+            st.session_state.summary_fields[idx] = {
+                "field": field_name,
+                "value": field_value
+            }
+        
+        # Build the table data
+        manual_summary_table = [
+            {"field": f["field"], "value": f["value"]} 
+            for f in st.session_state.summary_fields 
+            if f["field"].strip()
+        ]
+
+    st.markdown("---")
+    st.markdown("### 📝 Commands Configuration")
+
+    # Four buttons for managing items
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("➕ Add Predefined Command", use_container_width=True):
+        if st.button("➕ Add Header", use_container_width=True):
             st.session_state.commands.append({
-                "command": "", 
-                "description": "",
-                "type": "Predefined"
+                "type": "Header",
+                "text": "",
+                "description": ""
             })
             st.rerun()
     
     with col2:
-        if st.button("➕ Add Custom Command", use_container_width=True):
+        if st.button("➕ Add Predefined Command", use_container_width=True):
             st.session_state.commands.append({
-                "command": "", 
-                "description": "",
-                "type": "Custom"
+                "type": "Predefined",
+                "command": "",
+                "description": ""
             })
             st.rerun()
     
     with col3:
-        if st.button("🗑️ Delete Last Command", use_container_width=True, disabled=len(st.session_state.commands) == 0):
+        if st.button("➕ Add Custom Command", use_container_width=True):
+            st.session_state.commands.append({
+                "type": "Custom",
+                "command": "",
+                "description": ""
+            })
+            st.rerun()
+    
+    with col4:
+        if st.button("🗑️ Delete Last Item", use_container_width=True, disabled=len(st.session_state.commands) == 0):
             if st.session_state.commands:
                 st.session_state.commands.pop()
                 st.rerun()
 
-    # Form for template details
     with st.form("add_template_form", clear_on_submit=True):
-
         predefined_commands = [
             "show version",
             "show chassis routing-engine",
@@ -525,49 +638,79 @@ def add_template_dialog():
             "show chassis alarms"
         ]
         
-        # Display all command forms inside the main form
-        custom_commands_list = []
-        for idx, cmd in enumerate(st.session_state.commands):
-            cmd_type = cmd.get("type", "Predefined")
+        items_list = []
+        for idx, item in enumerate(st.session_state.commands):
+            item_type = item.get("type", "Predefined")
             
-            st.markdown(f"**Command {idx + 1}** - {cmd_type}")
+            st.markdown(f"**Item {idx + 1}** - {item_type}")
             
-            # Show selectbox for predefined or text input for custom
-            if cmd_type == "Predefined":
+            if item_type == "Header":
+                header_text = st.text_input(
+                    "Header Text",
+                    value=item.get("text", ""),
+                    key=f"header_{idx}",
+                    placeholder="e.g., System Information"
+                )
+                
+                st.session_state.commands[idx]["text"] = header_text
+                
+                if header_text and header_text.strip():
+                    items_list.append({
+                        "type": "Header",
+                        "text": header_text.strip(),
+                    })
+            
+            elif item_type == "Predefined":
                 cmd_text = st.selectbox(
                     "Select Command",
                     predefined_commands,
                     key=f"cmd_{idx}",
-                    index=predefined_commands.index(cmd.get("command")) if cmd.get("command") in predefined_commands else 0
+                    index=predefined_commands.index(item.get("command")) if item.get("command") in predefined_commands else 0
                 )
+                
+                cmd_desc = st.text_area(
+                    "Command Description",
+                    value=item.get("description", ""),
+                    key=f"desc_{idx}",
+                    placeholder="Describe what this command does",
+                    height=80
+                )
+                
+                st.session_state.commands[idx]["command"] = cmd_text
+                st.session_state.commands[idx]["description"] = cmd_desc
+                
+                if cmd_text and cmd_text.strip():
+                    items_list.append({
+                        "type": "Predefined",
+                        "command": cmd_text.strip(),
+                        "description": cmd_desc.strip()
+                    })
+            
             else:  # Custom
                 cmd_text = st.text_input(
                     "Enter Custom Command",
-                    value=cmd.get("command", ""),
+                    value=item.get("command", ""),
                     key=f"cmd_{idx}",
                     placeholder="e.g., show interfaces detail"
                 )
-            
-            # Description for this specific command
-            cmd_desc = st.text_area(
-                "Command Description",
-                value=cmd.get("description", ""),
-                key=f"desc_{idx}",
-                placeholder="Describe what this command does",
-                height=80
-            )
-            
-            # Update session state
-            st.session_state.commands[idx]["command"] = cmd_text
-            st.session_state.commands[idx]["description"] = cmd_desc
-            
-            # Add to list if command is not empty
-            if cmd_text and cmd_text.strip():
-                custom_commands_list.append({
-                    "command": cmd_text.strip(),
-                    "description": cmd_desc.strip(),
-                    "type": cmd_type
-                })
+                
+                cmd_desc = st.text_area(
+                    "Command Description",
+                    value=item.get("description", ""),
+                    key=f"desc_{idx}",
+                    placeholder="Describe what this command does",
+                    height=80
+                )
+                
+                st.session_state.commands[idx]["command"] = cmd_text
+                st.session_state.commands[idx]["description"] = cmd_desc
+                
+                if cmd_text and cmd_text.strip():
+                    items_list.append({
+                        "type": "Custom",
+                        "command": cmd_text.strip(),
+                        "description": cmd_desc.strip()
+                    })
             
             st.markdown("---")
         
@@ -578,46 +721,47 @@ def add_template_dialog():
             submit_btn = st.form_submit_button("✅ Submit", use_container_width=True)
 
     if cancel_btn:
-        st.session_state.commands = []  # Clear commands on cancel
+        st.session_state.commands = []
+        if "summary_fields" in st.session_state:
+            del st.session_state.summary_fields
         st.session_state.show_add_template = False
         st.rerun()
     
     if not submit_btn:
         return
 
-    # Validation for template details form
     if not name or not general_description:
         st.error("Please fill in Template Name and Template Description")
         return
     
-    if not custom_commands_list:
-        st.error("Please add at least one command")
+    if not items_list:
+        st.error("Please add at least one item")
         return
     
-    # Convert jump_host to integer (1 or 0)
-    jump_host_value = 1 if jump_host == "Yes" else 0
+    if manual_summary == "Yes" and not manual_summary_desc:
+        st.error("Please provide a summary description")
+        return
+    
+    if manual_summary == "Yes" and not manual_summary_table:
+        st.error("Please add at least one summary field")
+        return
     
     try:
-        # Prepare the data correctly:
-        # - command: JSON array of command strings
-        # - description: JSON array of command descriptions (matching each command)
-        # - general_desc: The overall template description
-        
-        commands_only = [cmd["command"] for cmd in custom_commands_list]
-        descriptions_only = [cmd["description"] for cmd in custom_commands_list]
-        
-        # Call create_template with corrected parameter mapping
+        # Store the entire items_list as JSON (includes headers and commands)
         create_template(
             name=name,
-            description=descriptions_only,      # JSON array of command descriptions
-            command=commands_only,              # JSON array of commands
+            description=[item.get("description", "") for item in items_list],
+            command=items_list,  # Store full structure with types
             customer_id=customer_id,
-            jump_host=jump_host_value,
-            general_desc=general_description    # Overall template description (what user entered)
+            general_desc=general_description,
+            manual_summary_desc=manual_summary_desc if manual_summary == "Yes" else None,
+            manual_summary_table=manual_summary_table if manual_summary == "Yes" else None
         )
         
         st.success("Template added successfully")
         st.session_state.commands = []
+        if "summary_fields" in st.session_state:
+            del st.session_state.summary_fields
         st.session_state.show_add_template = False
         st.rerun()
     except Exception as e:
@@ -625,7 +769,7 @@ def add_template_dialog():
         import traceback
         st.error(traceback.format_exc())
 
-@st.dialog("Confirm Delete Template")
+@st.dialog("Confirm Delete Template", on_dismiss=create_dismiss_handler("show_delete_template"), width="small")
 def delete_template_dialog(template_ids):
     st.warning(f"⚠️ Are you sure you want to delete {len(template_ids)} template(s)?")
     st.caption("This action cannot be undone.")
@@ -648,7 +792,7 @@ def delete_template_dialog(template_ids):
                 st.error(f"Failed to delete templates: {str(e)}")
 
 
-@st.dialog("Update Template(s)")
+@st.dialog("Update Template(s)", on_dismiss=create_dismiss_handler("show_update_template", ["update_forms_data"]), width="large")
 def update_template_dialog(selected_templates):
     """Update multiple templates at once"""
     st.write(f"Updating {len(selected_templates)} template(s)")
@@ -656,20 +800,106 @@ def update_template_dialog(selected_templates):
     if "update_forms_data" not in st.session_state:
         st.session_state.update_forms_data = {}
     
-    with st.form("update_templates_form", clear_on_submit=False):
-        updated_data = []
+    # Get customers for dropdown
+    customers_data = get_customers()
+    customers_df = pd.DataFrame(customers_data, columns=["id", "name", "email", "created_at", "jump_host", "jump_host_ip", "jump_host_username", "jump_host_password", "images"])
+    customer_options = {row['name']: row['id'] for _, row in customers_df.iterrows()}
+    customer_names = list(customer_options.keys())
+    
+    updated_data = []
+    
+    for idx, (_, template) in enumerate(selected_templates.iterrows()):
+        template_id = template["Template ID"]
         
-        # Get customers for dropdown
-        customers_data = get_customers()
-        customers_df = pd.DataFrame(customers_data, columns=["id", "name", "email", "created_at", "jump_host", "jump_host_ip", "jump_host_username", "jump_host_password", "images"])
-        customer_options = {row['name']: row['id'] for _, row in customers_df.iterrows()}
-        customer_names = list(customer_options.keys())
+        st.markdown(f"### Template ID: {template_id}")
         
-        for idx, (_, template) in enumerate(selected_templates.iterrows()):
-            template_id = template["Template ID"]
+        # Manual Summary Section - OUTSIDE FORM
+        st.markdown("### 📊 Manual Summary Configuration")
+        
+        has_manual_summary = template.get("Manual Summary Description") not in [None, "", "None"]
+        
+        manual_summary = st.radio(
+            "Enable Manual Summary",
+            ["No", "Yes"],
+            index=1 if has_manual_summary else 0,
+            horizontal=True,
+            key=f"manual_summary_{template_id}"
+        )
+        
+        manual_summary_desc = ""
+        manual_summary_table = []
+        
+        if manual_summary == "Yes":
+            manual_summary_desc = st.text_area(
+                "Summary Description",
+                value=template.get("Manual Summary Description", ""),
+                placeholder="Enter a description for the manual summary section...",
+                height=100,
+                key=f"manual_summary_desc_{template_id}"
+            )
             
-            st.markdown(f"### Template ID: {template_id}")
+            st.markdown("**Summary Table Fields**")
+            st.caption("Define the fields that will appear in the summary table")
             
+            # Parse existing manual summary table
+            try:
+                existing_table = json.loads(template.get("Manual Summary Table", "[]")) if isinstance(template.get("Manual Summary Table"), str) else template.get("Manual Summary Table", [])
+                if not existing_table:
+                    existing_table = [{"field": "", "value": ""}]
+            except:
+                existing_table = [{"field": "", "value": ""}]
+            
+            # Initialize table fields in session state for this template
+            session_key = f"summary_fields_{template_id}"
+            if session_key not in st.session_state:
+                st.session_state[session_key] = existing_table
+            
+            # Buttons for managing table fields
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("➕ Add Field", use_container_width=True, key=f"add_field_{template_id}"):
+                    st.session_state[session_key].append({"field": "", "value": ""})
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Remove Last Field", use_container_width=True, disabled=len(st.session_state[session_key]) <= 1, key=f"remove_field_{template_id}"):
+                    if len(st.session_state[session_key]) > 1:
+                        st.session_state[session_key].pop()
+                        st.rerun()
+            
+            # Display table fields
+            for field_idx, field_data in enumerate(st.session_state[session_key]):
+                col1, col2 = st.columns(2)
+                with col1:
+                    field_name = st.text_input(
+                        f"Field Name {field_idx + 1}",
+                        value=field_data.get("field", ""),
+                        key=f"field_name_{template_id}_{field_idx}",
+                        placeholder="e.g., Device Model"
+                    )
+                with col2:
+                    field_value = st.text_input(
+                        f"Default Value {field_idx + 1}",
+                        value=field_data.get("value", ""),
+                        key=f"field_value_{template_id}_{field_idx}",
+                        placeholder="e.g., MX480"
+                    )
+                
+                st.session_state[session_key][field_idx] = {
+                    "field": field_name,
+                    "value": field_value
+                }
+            
+            # Build the table data
+            manual_summary_table = [
+                {"field": f["field"], "value": f["value"]} 
+                for f in st.session_state[session_key] 
+                if f["field"].strip()
+            ]
+        
+        st.markdown("---")
+        
+        # NOW START THE FORM
+        with st.form(f"update_template_form_{template_id}", clear_on_submit=False):
             # Customer dropdown
             current_customer = template.get("Customer Name", "")
             customer_index = customer_names.index(current_customer) if current_customer in customer_names else 0
@@ -693,13 +923,12 @@ def update_template_dialog(selected_templates):
                 value=template["General Description"],
                 key=f"general_desc_{template_id}"
             )
-            
-            # Jump host
-            jump_host = st.selectbox(
-                "Jump Host",
-                ["No", "Yes"],
-                index=1 if template["Jump Host"] == "Yes" else 0,
-                key=f"jump_host_{template_id}"
+
+            update_time = st.text_input(
+                "Update Time (YYYY-MM-DD HH:MM:SS)",
+                value=str(template.get("Last Updated", "")),
+                key=f"update_time_{template_id}",
+                placeholder="2024-01-15 14:30:00"
             )
             
             # Parse existing commands and descriptions
@@ -722,67 +951,61 @@ def update_template_dialog(selected_templates):
                 key=f"desc_{template_id}"
             )
             
-            updated_data.append({
-                "id": template_id,
-                "customer_id": customer_id,
-                "name": name,
-                "general_description": general_description,
-                "jump_host": 1 if jump_host == "Yes" else 0,
-                "commands": commands,
-                "descriptions": descriptions
-            })
+            col1, col2 = st.columns(2)
+            with col1:
+                cancel_btn = st.form_submit_button("❌ Cancel", use_container_width=True)
+            with col2:
+                submit_btn = st.form_submit_button("✅ Update", use_container_width=True)
             
-            if idx < len(selected_templates) - 1:
-                st.divider()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            cancel_btn = st.form_submit_button("❌ Cancel", use_container_width=True)
-        with col2:
-            submit_btn = st.form_submit_button("✅ Update All", use_container_width=True)
-        
-        if cancel_btn:
-            st.session_state.show_update_template = False
-            if "update_forms_data" in st.session_state:
-                del st.session_state.update_forms_data
-            st.rerun()
-        
-        if submit_btn:
-            all_valid = True
-            for data in updated_data:
-                if not data["name"] or not data["general_description"]:
-                    st.error(f"Template ID {data['id']}: Please fill all required fields")
-                    all_valid = False
-            
-            if all_valid:
-                success_count = 0
-                for data in updated_data:
-                    try:
-                        # Parse JSON strings
-                        commands_list = json.loads(data["commands"])
-                        descriptions_list = json.loads(data["descriptions"])
-                        
-                        update_template(data["id"], data["name"], descriptions_list, commands_list, 
-                                      data["customer_id"], data["jump_host"], data["general_description"])
-                        success_count += 1
-                    except json.JSONDecodeError:
-                        st.error(f"Template ID {data['id']}: Invalid JSON format")
-                    except Exception as e:
-                        st.error(f"Failed to update Template ID {data['id']}: {str(e)}")
-                
-                if success_count > 0:
-                    st.success(f"Successfully updated {success_count} template(s)")
-                
+            if cancel_btn:
                 st.session_state.show_update_template = False
                 if "update_forms_data" in st.session_state:
                     del st.session_state.update_forms_data
+                for key in list(st.session_state.keys()):
+                    if key.startswith("summary_fields_"):
+                        del st.session_state[key]
                 st.rerun()
+            
+            if submit_btn:
+                if not name or not general_description:
+                    st.error(f"Template ID {template_id}: Please fill all required fields")
+                else:
+                    try:
+                        commands_list = json.loads(commands)
+                        descriptions_list = json.loads(descriptions)
+                        
+                        update_template(
+                            template_id, 
+                            name, 
+                            descriptions_list, 
+                            commands_list, 
+                            customer_id, 
+                            general_description, 
+                            update_time,
+                            manual_summary_desc if manual_summary == "Yes" else None,
+                            manual_summary_table if manual_summary == "Yes" else None
+                        )
+                        st.success(f"Template ID {template_id} updated successfully")
+                        st.session_state.show_update_template = False
+                        if "update_forms_data" in st.session_state:
+                            del st.session_state.update_forms_data
+                        for key in list(st.session_state.keys()):
+                            if key.startswith("summary_fields_"):
+                                del st.session_state[key]
+                        st.rerun()
+                    except json.JSONDecodeError:
+                        st.error(f"Template ID {template_id}: Invalid JSON format")
+                    except Exception as e:
+                        st.error(f"Failed to update Template ID {template_id}: {str(e)}")
+        
+        if idx < len(selected_templates) - 1:
+            st.divider()
 
 # -----------------------------
 # Report Dialogs
 # -----------------------------
 
-@st.dialog("Create New Report")
+@st.dialog("Create New Report", on_dismiss=create_dismiss_handler("show_create_report"), width="large")
 def create_report_dialog():
     # Get customers first
     customers_data = get_customers()
@@ -824,7 +1047,7 @@ def create_report_dialog():
             st.session_state.show_create_report = False
             st.rerun()
         return
-    
+
     # Both templates and devices exist - show the form
     with st.form("create_report_form", clear_on_submit=True):
         # Build template options
@@ -839,6 +1062,9 @@ def create_report_dialog():
         selected_device = st.selectbox("Device", list(device_options.keys()))
         device_id = device_options[selected_device]
         
+        # Add AI Summary option INSIDE the form
+        aisummary = st.radio("AI Summary", ["Yes", "No"], horizontal=True)
+        
         col1, col2 = st.columns(2)
         with col1:
             cancel_btn = st.form_submit_button("❌ Cancel", use_container_width=True)
@@ -852,23 +1078,16 @@ def create_report_dialog():
     if not submit_btn:
         return
     
+    # Convert aisummary to integer AFTER form submission
+    ai_summary_value = 1 if aisummary == "Yes" else 0
+    
     # Create report
     try:
         # Get template commands and descriptions
         template = get_template_by_id(template_id)
 
-        # Parse the command and description fields (both are JSON arrays)
-        commands_list = json.loads(template['command']) if isinstance(template['command'], str) else template['command']
-        descriptions_list = json.loads(template['description']) if isinstance(template['description'], str) else template['description']
-        
-        # Combine commands and descriptions into the format we need
-        commands_data = []
-        for i, cmd in enumerate(commands_list):
-            commands_data.append({
-                "command": cmd,
-                "description": descriptions_list[i] if i < len(descriptions_list) else "",
-                "type": "Command"  # You can enhance this if you stored type info
-            })
+        # Parse the command field (it's a JSON array with type info)
+        items_list = json.loads(template['command']) if isinstance(template['command'], str) else template['command']
         
         # Get device details
         device = get_device_by_id(device_id)
@@ -876,7 +1095,7 @@ def create_report_dialog():
         
         # Connect to device and execute commands
         with st.spinner("Connecting to device..."):
-            if template["jump_host"] == 1:
+            if customer["jump_host"] == 1:
                 jump, client = connect_via_jump_host(
                     customer["jump_host_ip"],
                     customer["jump_host_username"],
@@ -895,31 +1114,41 @@ def create_report_dialog():
         all_results = []
         
         with st.spinner("Executing commands..."):
-            for cmd_data in commands_data:
-                cmd = cmd_data["command"]
-                cmd_description = cmd_data["description"]
-                
-                try:
-                    result = run_command(client, cmd)
+            for item in items_list:
+                # Check if it's a header
+                if item.get("type") == "Header":
                     all_results.append({
-                        "command": cmd,
-                        "description": cmd_description,
-                        "output": result,
+                        "type": "Header",
+                        "text": item.get("text", ""),
                         "status": "success"
                     })
-                except Exception as e:
-                    all_results.append({
-                        "command": cmd,
-                        "description": cmd_description,
-                        "output": str(e),
-                        "status": "error"
-                    })
+                else:
+                    # It's a command (Predefined or Custom)
+                    cmd = item.get("command")
+                    cmd_description = item.get("description", "")
+                    
+                    try:
+                        result = run_command(client, cmd)
+                        all_results.append({
+                            "type": "Command",
+                            "command": cmd,
+                            "description": cmd_description,
+                            "output": result,
+                            "status": "success"
+                        })
+                    except Exception as e:
+                        all_results.append({
+                            "type": "Command",
+                            "command": cmd,
+                            "description": cmd_description,
+                            "output": str(e),
+                            "status": "error"
+                        })
         
         close_connection(client)
         
-        # Save report to database - pass the list directly, not JSON string
-        # create_report will handle the json.dumps() internally
-        create_report(device_id, customer_id, template_id, all_results)
+        # Save report to database
+        create_report(device_id, customer_id, template_id, all_results, ai_summary_value)
         
         st.success(f"Report created successfully!")
         st.session_state.show_create_report = False
@@ -930,7 +1159,7 @@ def create_report_dialog():
         import traceback
         st.error(traceback.format_exc())  # Add this to see full error details
 
-@st.dialog("Confirm Delete Reports")
+@st.dialog("Confirm Delete Reports", on_dismiss=create_dismiss_handler("show_delete_report"), width="small")
 def delete_report_dialog(report_ids):
     st.warning(f"⚠️ Are you sure you want to delete {len(report_ids)} report(s)?")
     st.caption("This action cannot be undone.")
@@ -952,7 +1181,7 @@ def delete_report_dialog(report_ids):
             except Exception as e:
                 st.error(f"Failed to delete reports: {str(e)}")
 
-@st.dialog("Download Report")
+@st.dialog("Download Report", on_dismiss=create_dismiss_handler("show_view_report"), width="small")
 def download_report_dialog(report_id):
     # Get report
     report = get_report_by_id(report_id)
@@ -1125,7 +1354,6 @@ if selected == "Device Details":
                     d.device_model,
                     d.device_ip,
                     d.username,
-                    d.password,
                     d.created_at
                 FROM devices d
                 LEFT JOIN customers c ON d.customer_id = c.id
@@ -1148,7 +1376,6 @@ if selected == "Device Details":
         "device_model": "Device Model",
         "device_ip": "Device IP",
         "username": "Username",
-        "password": "Password",
         "created_at": "Created At"
     })
 
@@ -1165,13 +1392,12 @@ if selected == "Device Details":
                 width="small"
             ),
             "Customer ID": None,  # Hide customer ID
-            "Username": None,
-            "Password": None,
         },
         disabled=[
             "Device ID",
             "Customer Name",
             "Serial Number",
+            "Username",
             "Device Type",
             "Device Model",
             "Device IP",
@@ -1251,8 +1477,10 @@ if selected == "Template Details":
                     t.customer_id,
                     c.name as customer_name,
                     t.created_at,
-                    t.jump_host,
-                    t.general_desc
+                    t.general_desc,
+                    t.update_time,
+                    t.manual_summary_desc,
+                    t.manual_summary_table
                 FROM command_templates t
                 LEFT JOIN customers c ON t.customer_id = c.id
                 LIMIT 1000
@@ -1273,13 +1501,12 @@ if selected == "Template Details":
         "customer_id": "Customer ID",
         "customer_name": "Customer Name",
         "created_at": "Created At",
-        "jump_host": "Jump Host",
-        "general_desc": "General Description"
+        "general_desc": "General Description",
+        "update_time": "Last Updated",
+        "manual_summary_desc": "Manual Summary Description",
+        "manual_summary_table": "Manual Summary Table"
     })
     
-    # Convert jump_host boolean to Yes/No
-    df_templates["Jump Host"] = df_templates["Jump Host"].apply(lambda x: "Yes" if x else "No")
-
     df_templates.insert(0, "Select", False)
 
     edited_df = st.data_editor(
@@ -1293,15 +1520,14 @@ if selected == "Template Details":
                 width="small"
             ),
             "Customer ID": None,  # Hide customer ID
-            "Command": None,
             "Description": None,
+            "Command": None
         },
         disabled=[
             "Template ID",
             "Name",
             "Customer Name",
             "Created At",
-            "Jump Host",
             "General Description"
         ]
     )
@@ -1376,7 +1602,8 @@ if selected == "Report Details and Generate Report":
             r.template_id,
             t.name as template_name,
             r.result,
-            r.created_at
+            r.created_at,
+            r.aisummary
 
         FROM reports r
         LEFT JOIN devices d ON r.device_id = d.id
@@ -1396,7 +1623,8 @@ if selected == "Report Details and Generate Report":
         "template_id": "Template ID",
         "template_name": "Template Name",
         "result": "Result",
-        "created_at": "Created At"
+        "created_at": "Created At",
+        "aisummary": "AI Summary"
     })
 
     df_reports.insert(0, "Select", False)
@@ -1415,13 +1643,15 @@ if selected == "Report Details and Generate Report":
             "Customer ID": None,
             "Template ID": None,
             "Result": None,
+            "AI Summary": None
         },
         disabled=[
             "Report ID",
             "Device",
             "Customer Name",
             "Template Name",
-            "Created At"
+            "Created At",
+            "AI Summary"
         ]
     )
 
@@ -1465,3 +1695,9 @@ if selected == "Report Details and Generate Report":
         if not selected_rows.empty:
             report_id = selected_rows["Report ID"].tolist()[0]
             download_report_dialog(report_id)
+
+# -----------------------------
+# User Management Page (Admin Only)
+# -----------------------------
+if selected == "User Management":
+    show_user_management()
