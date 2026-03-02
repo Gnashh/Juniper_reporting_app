@@ -17,7 +17,7 @@ import json
 from dotenv import load_dotenv
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table,
-    TableStyle, PageBreak, Image, Preformatted, Paragraph
+    TableStyle, PageBreak, Image, Preformatted, KeepTogether
 )
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -98,6 +98,40 @@ Report Data:
     return response.choices[0].message.content
 
 
+def _cli_table(text, cli_style, top_border=True, bottom_border=True):
+    """
+    Wrap a Preformatted CLI block in a styled Table that has a grey background.
+
+    By creating one small Table per batch (instead of one giant Table for all
+    output), each table is short enough for ReportLab to push to the next page
+    individually — giving us the background colour without the gap problem.
+
+    top_border / bottom_border control whether to draw the outer grey border on
+    that edge, so consecutive batches look like one seamless block.
+    """
+    tbl = Table(
+        [[Preformatted(text, cli_style)]],
+        colWidths=[16 * cm],
+    )
+
+    # Build border commands selectively so batches appear continuous
+    cmds = [
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.whitesmoke),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4 if top_border else 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4 if bottom_border else 0),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        # Always draw left/right borders
+        ("LINEABOVE",    (0, 0), (-1, 0),  0.5, colors.grey) if top_border    else ("NOSPLIT", (0, 0), (-1, -1)),
+        ("LINEBELOW",    (0, -1), (-1, -1), 0.5, colors.grey) if bottom_border else ("NOSPLIT", (0, 0), (-1, -1)),
+        ("LINEBEFORE",   (0, 0), (0, -1),  0.5, colors.grey),
+        ("LINEAFTER",    (-1, 0), (-1, -1), 0.5, colors.grey),
+    ]
+
+    tbl.setStyle(TableStyle(cmds))
+    return tbl
+
 
 def generate_pdf(report_id):
     """
@@ -105,18 +139,18 @@ def generate_pdf(report_id):
     Returns the path to the generated PDF file.
     """
     report = get_report_by_id(report_id)
-
     customer = get_customer_by_id(report["customer_id"])
     device = get_device_by_id(report["device_id"])
     template = get_template_by_id(report["template_id"])
 
     customer_name = customer["name"]
+    template_name = template["name"]
     device_serial = device["serial_number"]
     device_username = device["username"]
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
 
-    filename = f"Report_{report_id}_{customer_name}_{device_serial}.pdf"
+    filename = f"Report_{template_name}_{device_serial}.pdf"
 
     # ----------------------------
     # DOCUMENT SETUP
@@ -157,7 +191,9 @@ def generate_pdf(report_id):
         name="CLIStyle",
         fontName="Courier",
         fontSize=8,
-        leading=9
+        leading=9,
+        spaceBefore=0,
+        spaceAfter=0,
     )
 
     story = []
@@ -170,7 +206,6 @@ def generate_pdf(report_id):
 
     host_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'IMG', 'ipnetcropped.jpg')
 
-    # Write customer logo to a temp file
     if customer_logo:
         try:
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
@@ -182,17 +217,13 @@ def generate_pdf(report_id):
     else:
         tmp_path = None
 
-    # Build logo row: customer logo LEFT, host logo RIGHT
-    left_cell = Image(tmp_path, width=3 * cm, height=3 * cm) if tmp_path else Paragraph("", styles["BodyStyle"])
+    left_cell  = Image(tmp_path, width=3 * cm, height=3 * cm) if tmp_path else Paragraph("", styles["BodyStyle"])
     right_cell = Image(host_logo_path, width=10 * cm, height=4 * cm) if os.path.exists(host_logo_path) else Paragraph("", styles["BodyStyle"])
 
-    logo_table = Table(
-        [[left_cell, right_cell]],
-        colWidths=[8.5 * cm, 8.5 * cm]
-    )
+    logo_table = Table([[left_cell, right_cell]], colWidths=[8.5 * cm, 8.5 * cm])
     logo_table.setStyle(TableStyle([
-        ("ALIGN",         (0, 0), (0, 0), "LEFT"),
-        ("ALIGN",         (1, 0), (1, 0), "RIGHT"),
+        ("ALIGN",         (0, 0), (0, 0),   "LEFT"),
+        ("ALIGN",         (1, 0), (1, 0),   "RIGHT"),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
@@ -201,29 +232,27 @@ def generate_pdf(report_id):
     ]))
     story.append(logo_table)
     story.append(Spacer(1, 100))
-
-    story.append(Paragraph(f"Monthly Report for {customer_name}", styles["TitleStyle"]))
+    story.append(Paragraph(f"{template_name}", styles["TitleStyle"]))
     story.append(Spacer(1, 30))
 
     meta_data = [
-        ["Customer", customer_name],
-        ["Device Serial", device_serial],
+        ["Customer",        customer_name],
+        ["Device Serial",   device_serial],
         ["Device Hostname", device_username],
-        ["Description",Paragraph(template_desc, styles["BodyStyle"])],
-        ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+        ["Description",     Paragraph(template_desc, styles["BodyStyle"])],
+        ["Generated",       datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
     ]
 
     meta_table = Table(meta_data, colWidths=[4 * cm, 12 * cm])
-
     meta_table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND",    (0, 0), (0, -1),  colors.whitesmoke),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTSIZE",      (0, 0), (-1, -1), 9),
     ]))
 
     story.append(meta_table)
@@ -232,180 +261,194 @@ def generate_pdf(report_id):
     # ----------------------------
     # AI SUMMARY SECTION
     # ----------------------------
-
-    # Check if AI summary is enabled AND results exist (not empty)
     if report.get("aisummary") == 1 and report.get("result"):
         try:
             story.append(Paragraph("System Summary", styles["HeaderStyle"]))
             summary_json = AI_report_summary(report)
-            
-            # Validate JSON response
+
             if summary_json and summary_json.strip():
                 summary_data = json.loads(summary_json)
-                
-                # Summary table
-                summary_table_data = summary_data.get("summary_table", {})
+
                 table_rows = []
-                for key, value in summary_table_data.items():
+                for key, value in summary_data.get("summary_table", {}).items():
                     value_str = str(value)
                     if len(value_str) > 60:
                         value_str = value_str[:60] + "..."
                     table_rows.append([key.replace('_', ' ').title(), value_str])
-                
+
                 if table_rows:
                     summary_table = Table(table_rows, colWidths=[6 * cm, 10 * cm])
                     summary_table.setStyle(TableStyle([
-                        ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
-                        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("GRID",          (0, 0), (-1, -1), 0.7, colors.black),
+                        ("BACKGROUND",    (0, 0), (0, -1),  colors.lightgrey),
+                        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                        ("TOPPADDING",    (0, 0), (-1, -1), 6),
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("FONTSIZE",      (0, 0), (-1, -1), 9),
                     ]))
                     story.append(summary_table)
                     story.append(Spacer(1, 15))
-                
-                # Narrative summary
+
                 narrative = summary_data.get("narrative_summary", "")
                 if narrative:
-                    story.append(Paragraph("<b>Narrative Summary:</b>", styles["BodyStyle"]))
+                    story.append(Paragraph("<b>Summary:</b>", styles["BodyStyle"]))
                     for para in narrative.split("\n\n"):
                         if para.strip():
                             story.append(Paragraph(para.replace("\n", "<br/>"), styles["BodyStyle"]))
-                
+
                 story.append(PageBreak())
-            else:
-                # Skip AI summary section entirely - no page break
-                pass
-                
-        except json.JSONDecodeError as e:
-            # Skip AI summary section - no error message, no page break
-            pass
-        except Exception as e:
-            # Skip AI summary section - no error message, no page break
+
+        except (json.JSONDecodeError, Exception):
             pass
 
-    else:
-        # AI summary not enabled - skip section entirely, no page break
-        pass
+    # ----------------------------
+    # MANUAL SUMMARY SECTION
+    # ----------------------------
+    if template.get("manual_summary_desc"):
+        story.append(Paragraph("Manual Summary", styles["HeaderStyle"]))
+        manual_table_data = template.get("manual_summary_table")
+        if isinstance(manual_table_data, str):
+            try:
+                manual_table_data = json.loads(manual_table_data)
+            except json.JSONDecodeError:
+                manual_table_data = []
+
+        if manual_table_data and isinstance(manual_table_data, list):
+            table_rows = []
+            for item in manual_table_data:
+                if isinstance(item, dict):
+                    field = item.get("field", "")
+                    value = item.get("value", "")
+                    if field:
+                        table_rows.append([field, value])
+
+            if table_rows:
+                summary_table = Table(table_rows, colWidths=[6 * cm, 10 * cm])
+                summary_table.setStyle(TableStyle([
+                    ("GRID",          (0, 0), (-1, -1), 0.7, colors.black),
+                    ("BACKGROUND",    (0, 0), (0, -1),  colors.lightgrey),
+                    ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                    ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("FONTSIZE",      (0, 0), (-1, -1), 9),
+                ]))
+                story.append(summary_table)
+
+        story.append(Spacer(1, 15))
+        story.append(Paragraph(template["manual_summary_desc"], styles["BodyStyle"]))
+        story.append(Spacer(1, 15))
+        story.append(PageBreak())
 
     # ----------------------------
     # COMMAND OUTPUT SECTION
     # ----------------------------
-
-    # Parse command results; handle both JSON string (from DB) and list
     results = report["result"]
-    
+
     if isinstance(results, str):
         try:
             results = json.loads(results)
         except json.JSONDecodeError:
             results = []
-    
+
     if not isinstance(results, list):
         results = []
 
     if not results:
         story.append(Paragraph("No command results found.", styles["BodyStyle"]))
     else:
-        for idx, result_data in enumerate(results, 1):
+        command_entries = [r for r in results if isinstance(r, dict) and r.get("type") != "Header"]
+        command_count   = len(command_entries)
+        command_idx     = 0
+
+        for result_data in results:
             if not isinstance(result_data, dict):
                 continue
-            
-            # Check if it's a header
+
+            # ── HEADER ────────────────────────────────────────────────────
             if result_data.get("type") == "Header":
-                story.append(Spacer(1, 20))
-                story.append(Paragraph(
-                    result_data.get("text", ""),
-                    styles["HeaderStyle"]
-                ))
+                if story and not isinstance(story[-1], PageBreak):
+                    story.append(PageBreak())
+                story.append(Paragraph(result_data.get("text", ""), styles["HeaderStyle"]))
                 story.append(Spacer(1, 10))
                 continue
 
+            # ── COMMAND ENTRY ──────────────────────────────────────────────
+            command_idx += 1
+
             cmd_description = result_data.get("description", "")
-            if cmd_description:
-                story.append(Paragraph(
-                    f"<b>Description:</b> {cmd_description}",
-                    styles["BodyStyle"]
-                ))
+            output          = result_data.get("output", "")
 
-            output = result_data.get("output", "")
-
-            # Wrap long lines to prevent PDF overflow
+            # Wrap long lines so nothing overflows the page width
             max_line_length = 90
             wrapped_lines = []
             for line in output.split('\n'):
-                if len(line) > max_line_length:
-                    # Break long lines
-                    while len(line) > max_line_length:
-                        wrapped_lines.append(line[:max_line_length])
-                        line = line[max_line_length:]
-                    if line:
-                        wrapped_lines.append(line)
-                else:
-                    wrapped_lines.append(line)
-            
-            wrapped_output = '\n'.join(wrapped_lines)
-            
-            # Paginate: split output into chunks to fit ~75 lines per page
-            lines = wrapped_output.split('\n')
-            max_lines_per_page = 75
-            
-            if len(lines) > max_lines_per_page:
-                # Split into multiple chunks
-                for i in range(0, len(lines), max_lines_per_page):
-                    chunk = '\n'.join(lines[i:i + max_lines_per_page])
-                    cli_block = Preformatted(chunk, cli_style)
-                    
-                    story.append(Table(
-                        [[cli_block]],
-                        colWidths=[16 * cm],
-                        style=[
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                            ("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                            ("TOPPADDING", (0, 0), (-1, -1), 6),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ]
-                    ))
-                    
-                    # Add page break between chunks (except last one)
-                    if i + max_lines_per_page < len(lines):
-                        story.append(PageBreak())
-            else:
-                # Output fits on one page
-                cli_block = Preformatted(wrapped_output, cli_style)
-                
-                story.append(Table(
-                    [[cli_block]],
-                    colWidths=[16 * cm],
-                    style=[
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                        ("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                        ("TOPPADDING", (0, 0), (-1, -1), 6),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ]
-                ))
+                while len(line) > max_line_length:
+                    wrapped_lines.append(line[:max_line_length])
+                    line = line[max_line_length:]
+                wrapped_lines.append(line)
 
-            story.append(PageBreak())
+            # ------------------------------------------------------------------
+            # Split output into small batches (BATCH lines each).
+            # Each batch becomes its own small Table with grey background.
+            # Small tables can be pushed to the next page individually, so
+            # ReportLab never needs to leave a big blank gap.
+            #
+            # Consecutive batch-tables share borders so they look like one
+            # continuous block: the first gets a top border, the last gets a
+            # bottom border, middle ones get neither top nor bottom border.
+            # ------------------------------------------------------------------
+            BATCH = 70  # lines per table — small enough to fit partial pages
+
+            batches = []
+            for i in range(0, len(wrapped_lines), BATCH):
+                batches.append('\n'.join(wrapped_lines[i:i + BATCH]))
+
+            n = len(batches)
+
+            # Build the CLI table flowables
+            cli_flowables = []
+            for i, batch_text in enumerate(batches):
+                is_first = (i == 0)
+                is_last  = (i == n - 1)
+                cli_flowables.append(
+                    _cli_table(batch_text, cli_style,
+                               top_border=is_first,
+                               bottom_border=is_last)
+                )
+
+            # Keep description label + first batch together (anti-orphan).
+            # The remaining batches are added directly to the story so they
+            # can flow freely across page boundaries.
+            if cmd_description:
+                desc_para = Paragraph(f"<b>Description:</b> {cmd_description}", styles["BodyStyle"])
+                if cli_flowables:
+                    story.append(KeepTogether([desc_para, cli_flowables[0]]))
+                    for tbl in cli_flowables[1:]:
+                        story.append(tbl)
+                else:
+                    story.append(desc_para)
+            else:
+                for tbl in cli_flowables:
+                    story.append(tbl)
+
+            # Page break between commands, not after the last one
+            if command_idx < command_count:
+                story.append(PageBreak())
 
     # ----------------------------
     # BUILD PDF
     # ----------------------------
     doc.build(story)
-    
-    # Clean up temp logo file if it exists
+
+    # Clean up temp logo file
     if customer_logo and tmp_path and os.path.exists(tmp_path):
         try:
             os.unlink(tmp_path)
-        except:
+        except Exception:
             pass
 
     return filename
