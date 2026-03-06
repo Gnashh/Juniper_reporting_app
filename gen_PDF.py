@@ -25,6 +25,7 @@ from reportlab.lib.units import cm
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
+from io import BytesIO
 
 # Load environment variables
 load_dotenv()
@@ -136,7 +137,7 @@ def _cli_table(text, cli_style, top_border=True, bottom_border=True):
 def generate_pdf(report_id):
     """
     Generate a PDF report: cover page, AI summary, and command outputs.
-    Returns the path to the generated PDF file.
+    Returns a BytesIO buffer containing the PDF.
     """
     report = get_report_by_id(report_id)
     customer = get_customer_by_id(report["customer_id"])
@@ -150,13 +151,14 @@ def generate_pdf(report_id):
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
 
-    filename = f"Report_{template_name}_{device_serial}.pdf"
+    # Create in-memory buffer instead of file
+    buffer = BytesIO()
 
     # ----------------------------
     # DOCUMENT SETUP
     # ----------------------------
     doc = SimpleDocTemplate(
-        filename,
+        buffer,
         pagesize=A4,
         rightMargin=2 * cm,
         leftMargin=2 * cm,
@@ -202,7 +204,6 @@ def generate_pdf(report_id):
     # COVER PAGE
     # ----------------------------
     from reportlab.lib.utils import ImageReader
-    from io import BytesIO
 
     host_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'IMG', 'ipnetcropped.jpg')
 
@@ -451,4 +452,6 @@ def generate_pdf(report_id):
         except Exception:
             pass
 
-    return filename
+    # Return buffer positioned at start
+    buffer.seek(0)
+    return buffer, f"Report_{template_name}_{device_serial}.pdf"

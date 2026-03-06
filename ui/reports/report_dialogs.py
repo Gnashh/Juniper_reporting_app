@@ -145,12 +145,14 @@ def delete_report_dialog(report_ids):
 @st.dialog("Download Report", on_dismiss=create_dismiss_handler("show_view_report"), width="small")
 def download_report_dialog(report_id):
     """Download/view report dialog"""
-    report = get_report_by_id(report_id)
-    pdf_path = generate_pdf(report_id)
+    pdf_buffer, filename = generate_pdf(report_id)
 
-    with open(pdf_path, "rb") as f:
-        template_name = get_template_by_id(report["template_id"])["name"]
-        st.download_button("Download Report", data=f, file_name=f"Report_{template_name}.pdf")
+    st.download_button(
+        "Download Report",
+        data=pdf_buffer,
+        file_name=filename,
+        mime="application/pdf"
+    )
 
     if st.button("Close"):
         st.session_state.show_view_report = False
