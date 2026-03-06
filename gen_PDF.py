@@ -30,15 +30,28 @@ from io import BytesIO
 # Load environment variables
 load_dotenv()
 
-# Groq client for AI summarization (uses GROQ_API_KEY from .env)
-client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+# Don't initialize Groq client here - do it inside the function
+# client = Groq(api_key=os.getenv('GROQ_API_KEY'))  # REMOVE THIS LINE
 
 
 def AI_report_summary(report):
     """Use Groq LLM to analyze report data and return structured JSON summary."""
-    result = report["result"]
+    try:
+        # Check API key first
+        api_key = os.getenv('GROQ_API_KEY')
+        if not api_key:
+            error_msg = "GROQ_API_KEY not found in environment variables"
+            print(f"ERROR: {error_msg}")
+            return None
+        
+        print(f"DEBUG: API key exists: {api_key[:10]}...")
+        
+        # Initialize Groq client HERE, not at module level
+        client = Groq(api_key=api_key)
+        
+        result = report["result"]
 
-    user_prompt = """
+        user_prompt = """
 Analyze the following router/switch system report.
 
 Return ONLY valid JSON with no extra text.
@@ -69,34 +82,43 @@ Rules:
 Report Data:
 """ + str(result)
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        temperature=0.2,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a senior network engineer and technical report writer. \n"
-                    "Your task is to analyze raw router/switch system reports and produce:\n"
-                    "1) A simple summary table\n"
-                    "2) A professional narrative explanation\n\n"
-                    "Rules:\n"
-                    "- Base your analysis ONLY on the provided data\n"
-                    "- Do NOT assume or invent missing values\n"
-                    "- If data is missing, return 'Not Reported'\n"
-                    "- Keep the table simple and consistent\n"
-                    "- Use professional networking terminology\n"
-                    "- Ensure the narrative is clear and structured"
-                )
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ]
-    )
-
-    return response.choices[0].message.content
+        print("DEBUG: Attempting Groq API call...")
+        
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior network engineer and technical report writer. \n"
+                        "Your task is to analyze raw router/switch system reports and produce:\n"
+                        "1) A simple summary table\n"
+                        "2) A professional narrative explanation\n\n"
+                        "Rules:\n"
+                        "- Base your analysis ONLY on the provided data\n"
+                        "- Do NOT assume or invent missing values\n"
+                        "- If data is missing, return 'Not Reported'\n"
+                        "- Keep the table simple and consistent\n"
+                        "- Use professional networking terminology\n"
+                        "- Ensure the narrative is clear and structured"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ]
+        )
+        
+        print("DEBUG: Groq API call successful")
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        print(f"ERROR in AI_report_summary: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def _cli_table(text, cli_style, top_border=True, bottom_border=True):
@@ -262,12 +284,21 @@ def generate_pdf(report_id):
     # ----------------------------
     # AI SUMMARY SECTION
     # ----------------------------
-    if report.get("aisummary") == 1 and report.get("result"):
+    if report.get("ai_summary") == 1 and report.get("result"):
+        print(f"DEBUG: AI Summary enabled for report {report_id}")
         try:
             story.append(Paragraph("System Summary", styles["HeaderStyle"]))
+            
+            print(f"DEBUG: Calling AI_report_summary...")
             summary_json = AI_report_summary(report)
+            print(f"DEBUG: AI summary returned: {summary_json[:100] if summary_json else 'None'}...")
 
-            if summary_json and summary_json.strip():
+            if not summary_json:
+                print("WARNING: AI summary returned None")
+                story.append(Paragraph("AI Summary unavailable - check server logs", styles["BodyStyle"]))
+                story.append(PageBreak())
+            elif summary_json and summary_json.strip():
+                print("DEBUG: Parsing JSON response...")
                 summary_data = json.loads(summary_json)
 
                 table_rows = []
@@ -300,9 +331,14 @@ def generate_pdf(report_id):
                             story.append(Paragraph(para.replace("\n", "<br/>"), styles["BodyStyle"]))
 
                 story.append(PageBreak())
+                print("DEBUG: AI summary section completed successfully")
 
-        except (json.JSONDecodeError, Exception):
-            pass
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"ERROR in AI summary section: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"DEBUG: AI Summary disabled or no results (ai_summary={report.get('ai_summary')}, has_result={bool(report.get('result'))})")
 
     # ----------------------------
     # MANUAL SUMMARY SECTION

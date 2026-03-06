@@ -4,6 +4,7 @@ import pandas as pd
 
 from db.customer import get_customers
 from db.templates import create_template, update_template, delete_template
+from ui.utils import create_dismiss_handler
 
 
 # -------------------------------
@@ -214,181 +215,169 @@ def render_command_builder():
 # ADD TEMPLATE
 # -------------------------------
 
+@st.dialog("Add Template", on_dismiss=create_dismiss_handler("show_add_template", ["commands", "summary_fields"]), width="large")
 def add_template_dialog():
 
-    if not st.session_state.get("show_add_template"):
-        return
+    customers = get_customer_options()
 
-    with modal("Add Template"):
+    selected = st.selectbox("Customer", list(customers.keys()))
+    customer_id = customers[selected]
 
-        customers = get_customer_options()
+    name = st.text_input("Template Name")
+    description = st.text_area("Template Description")
 
-        selected = st.selectbox("Customer", list(customers.keys()))
-        customer_id = customers[selected]
+    st.markdown("### Manual Summary")
 
-        name = st.text_input("Template Name")
-        description = st.text_area("Template Description")
+    enable_summary = st.toggle("Enable Summary")
 
-        st.markdown("### Manual Summary")
+    summary_desc = ""
+    summary_table = []
 
-        enable_summary = st.toggle("Enable Summary")
+    if enable_summary:
 
-        summary_desc = ""
-        summary_table = []
+        summary_desc = st.text_area("Summary Description")
 
-        if enable_summary:
+        summary_table = render_summary_fields("summary_fields")
 
-            summary_desc = st.text_area("Summary Description")
+    st.markdown("### Commands")
 
-            summary_table = render_summary_fields("summary_fields")
+    commands = render_command_builder()
 
-        st.markdown("### Commands")
+    col1, col2 = st.columns(2)
 
-        commands = render_command_builder()
+    with col1:
+        if st.button("Cancel", use_container_width=True):
 
-        col1, col2 = st.columns(2)
+            st.session_state.show_add_template = False
+            st.session_state.pop("commands", None)
+            st.session_state.pop("summary_fields", None)
 
-        with col1:
-            if st.button("Cancel", use_container_width=True):
+            st.rerun()
 
-                st.session_state.show_add_template = False
-                st.session_state.pop("commands", None)
-                st.session_state.pop("summary_fields", None)
+    with col2:
+        if st.button("Submit", use_container_width=True):
 
-                st.rerun()
+            if not name or not description:
+                st.error("Name and description required")
+                return
 
-        with col2:
-            if st.button("Submit", use_container_width=True):
+            if not commands:
+                st.error("Add at least one command")
+                return
 
-                if not name or not description:
-                    st.error("Name and description required")
-                    return
+            create_template(
+                name=name,
+                description=[x.get("description", "") for x in commands],
+                command=commands,
+                customer_id=customer_id,
+                general_desc=description,
+                manual_summary_desc=summary_desc if enable_summary else None,
+                manual_summary_table=summary_table if enable_summary else None,
+            )
 
-                if not commands:
-                    st.error("Add at least one command")
-                    return
+            st.success("Template created")
 
-                create_template(
-                    name=name,
-                    description=[x.get("description", "") for x in commands],
-                    command=commands,
-                    customer_id=customer_id,
-                    general_desc=description,
-                    manual_summary_desc=summary_desc if enable_summary else None,
-                    manual_summary_table=summary_table if enable_summary else None,
-                )
+            st.session_state.show_add_template = False
+            st.session_state.pop("commands", None)
+            st.session_state.pop("summary_fields", None)
 
-                st.success("Template created")
-
-                st.session_state.show_add_template = False
-                st.session_state.pop("commands", None)
-                st.session_state.pop("summary_fields", None)
-
-                st.rerun()
+            st.rerun()
 
 
 # -------------------------------
 # DELETE TEMPLATE
 # -------------------------------
 
+@st.dialog("Delete Template", on_dismiss=create_dismiss_handler("show_delete_template"), width="small")
 def delete_template_dialog(template_ids):
 
-    if not st.session_state.get("show_delete_template"):
-        return
+    st.warning(f"Delete {len(template_ids)} template(s)?")
 
-    with modal("Delete Template"):
+    col1, col2 = st.columns(2)
 
-        st.warning(f"Delete {len(template_ids)} template(s)?")
+    with col1:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.show_delete_template = False
+            st.rerun()
 
-        col1, col2 = st.columns(2)
+    with col2:
+        if st.button("Delete", use_container_width=True):
 
-        with col1:
-            if st.button("Cancel", use_container_width=True):
-                st.session_state.show_delete_template = False
-                st.rerun()
+            for i in template_ids:
+                delete_template(i)
 
-        with col2:
-            if st.button("Delete", use_container_width=True):
+            st.success("Templates deleted")
 
-                for i in template_ids:
-                    delete_template(i)
-
-                st.success("Templates deleted")
-
-                st.session_state.show_delete_template = False
-                st.rerun()
+            st.session_state.show_delete_template = False
+            st.rerun()
 
 
 # -------------------------------
 # UPDATE TEMPLATE
 # -------------------------------
 
+@st.dialog("Update Templates", on_dismiss=create_dismiss_handler("show_update_template"), width="large")
 def update_template_dialog(selected_templates):
 
-    if not st.session_state.get("show_update_template"):
-        return
+    customers = get_customer_options()
+    customer_names = list(customers.keys())
 
-    with modal("Update Templates"):
+    for _, template in selected_templates.iterrows():
 
-        customers = get_customer_options()
-        customer_names = list(customers.keys())
+        template_id = template["Template ID"]
 
-        for _, template in selected_templates.iterrows():
+        st.markdown(f"### Template {template_id}")
 
-            template_id = template["Template ID"]
+        name = st.text_input(
+            "Template Name",
+            value=template["Name"],
+            key=f"name_{template_id}",
+        )
 
-            st.markdown(f"### Template {template_id}")
+        desc = st.text_area(
+            "Description",
+            value=template["General Description"],
+            key=f"desc_{template_id}",
+        )
 
-            name = st.text_input(
-                "Template Name",
-                value=template["Name"],
-                key=f"name_{template_id}",
-            )
+        customer_index = 0
 
-            desc = st.text_area(
-                "Description",
-                value=template["General Description"],
-                key=f"desc_{template_id}",
-            )
+        if template.get("Customer Name") in customer_names:
+            customer_index = customer_names.index(template["Customer Name"])
 
-            customer_index = 0
+        selected_customer = st.selectbox(
+            "Customer",
+            customer_names,
+            index=customer_index,
+            key=f"customer_{template_id}",
+        )
 
-            if template.get("Customer Name") in customer_names:
-                customer_index = customer_names.index(template["Customer Name"])
+        col1, col2 = st.columns(2)
 
-            selected_customer = st.selectbox(
-                "Customer",
-                customer_names,
-                index=customer_index,
-                key=f"customer_{template_id}",
-            )
+        with col1:
+            if st.button("Cancel", key=f"cancel_{template_id}"):
 
-            col1, col2 = st.columns(2)
+                st.session_state.show_update_template = False
+                st.rerun()
 
-            with col1:
-                if st.button("Cancel", key=f"cancel_{template_id}"):
+        with col2:
+            if st.button("Update", key=f"update_{template_id}"):
 
-                    st.session_state.show_update_template = False
-                    st.rerun()
+                update_template(
+                    template_id,
+                    name,
+                    template["Description"],
+                    template["Command"],
+                    customers[selected_customer],
+                    desc,
+                    None,
+                    None,
+                    None,
+                )
 
-            with col2:
-                if st.button("Update", key=f"update_{template_id}"):
+                st.success(f"Template {template_id} updated")
 
-                    update_template(
-                        template_id,
-                        name,
-                        template["Description"],
-                        template["Command"],
-                        customers[selected_customer],
-                        desc,
-                        None,
-                        None,
-                        None,
-                    )
+                st.session_state.show_update_template = False
+                st.rerun()
 
-                    st.success(f"Template {template_id} updated")
-
-                    st.session_state.show_update_template = False
-                    st.rerun()
-
-            st.divider()
+        st.divider()
