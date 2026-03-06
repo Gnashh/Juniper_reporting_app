@@ -38,6 +38,9 @@ CREATE TABLE command_templates (
     customer_id INT,
     general_desc TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NULL,
+    manual_summary_desc TEXT,
+    manual_summary_table JSON,
 
     FOREIGN KEY (customer_id) REFERENCES customers(id)
 );
