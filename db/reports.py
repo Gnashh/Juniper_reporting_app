@@ -26,7 +26,7 @@ def create_report(device_id, customer_id, template_id, results, ai_summary):
     results_json = json.dumps(results)
     
     cursor.execute("""
-        INSERT INTO reports (device_id, customer_id, template_id, result, aisummary)
+        INSERT INTO reports (device_id, customer_id, template_id, result, ai_summary)
         VALUES (%s, %s, %s, %s, %s)
     """, (device_id, customer_id, template_id, results_json, ai_summary))
     
