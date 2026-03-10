@@ -162,3 +162,4 @@ def update_device_dialog(selected_devices):
                 st.session_state.show_update_device = False
                 st.session_state.pop("update_forms_data", None)
                 st.rerun()
+
