@@ -29,7 +29,7 @@ CREATE TABLE devices (
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 );
 
--- Command Templates
+-- Command Template
 CREATE TABLE command_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
