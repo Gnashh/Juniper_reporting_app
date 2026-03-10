@@ -30,7 +30,8 @@ def show_report_page():
                     r.template_id,
                     t.name AS template_name,
                     r.result,
-                    r.created_at
+                    r.created_at,
+                    r.ai_summary
                 FROM reports r
                 LEFT JOIN devices d ON r.device_id = d.id
                 LEFT JOIN customers c ON r.customer_id = c.id
@@ -54,6 +55,7 @@ def show_report_page():
         "template_name": "Template Name",
         "result": "Result",
         "created_at": "Created At",
+        "ai_summary": "AI Summary",
     })
     df_reports.insert(0, "Select", False)
 

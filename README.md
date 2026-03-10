@@ -8,7 +8,7 @@ A Streamlit-based reporting application for Juniper network devices with built-i
 
 ### 2. Install dependencies
 ```bash
-pip install -r dependencies
+pip install -r requirements
 ```
 
 ### 3. Configure Database
