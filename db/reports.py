@@ -18,11 +18,10 @@ import json
 pdf = FPDF()
 
 
-def create_report(device_id, customer_id, template_id, results, ai_summary):
-    """Insert a new report; results (list of dicts) is serialized to JSON."""
+def create_report(device_id, customer_id, template_id, results, ai_summary=None):
+    """Insert a new report; results (list of dicts) is serialized to JSON. AI summary is optional."""
     conn = connect_to_db()
     cursor = conn.cursor()
-    # Convert results to JSON string
     results_json = json.dumps(results)
     
     cursor.execute("""

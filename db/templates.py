@@ -68,7 +68,13 @@ def get_template_by_id(id):
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM command_templates WHERE id = %s", (id,))
     template = cursor.fetchone()
-    conn.close()
+    
+    if template:
+        # Parse JSON fields
+        template['command'] = json.loads(template['command']) if isinstance(template['command'], str) else template['command']
+        template['description'] = json.loads(template['description']) if isinstance(template['description'], str) else template['description']
+        template['manual_summary_table'] = json.loads(template['manual_summary_table']) if isinstance(template['manual_summary_table'], str) else template['manual_summary_table']
+    
     return template
 
 def update_template(id, name, description, command, customer_id, general_desc, update_time, manual_summary_desc=None, manual_summary_table=None):

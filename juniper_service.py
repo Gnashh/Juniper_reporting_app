@@ -101,3 +101,11 @@ def get_system_info(client):
         "model": model,
         "version": version
     }
+
+
+def close_jump_connection(jump_client, device_client):
+    """Close both jump host and device connections in correct order."""
+    if device_client:
+        device_client.close()
+    if jump_client:
+        jump_client.close()

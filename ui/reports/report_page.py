@@ -30,8 +30,7 @@ def show_report_page():
                     r.template_id,
                     t.name AS template_name,
                     r.result,
-                    r.created_at,
-                    r.aisummary
+                    r.created_at
                 FROM reports r
                 LEFT JOIN devices d ON r.device_id = d.id
                 LEFT JOIN customers c ON r.customer_id = c.id
@@ -55,7 +54,6 @@ def show_report_page():
         "template_name": "Template Name",
         "result": "Result",
         "created_at": "Created At",
-        "aisummary": "AI Summary",
     })
     df_reports.insert(0, "Select", False)
 
@@ -69,9 +67,8 @@ def show_report_page():
             "Customer ID": None,
             "Template ID": None,
             "Result": None,
-            "AI Summary": None,
         },
-        disabled=["Report ID", "Device", "Customer Name", "Template Name", "Created At", "AI Summary"],
+        disabled=["Report ID", "Device", "Customer Name", "Template Name", "Created At"],
     )
 
     selected_rows = edited_df[edited_df["Select"] == True]

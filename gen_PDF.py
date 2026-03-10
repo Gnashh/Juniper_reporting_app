@@ -9,7 +9,7 @@ from db.devices import get_device_by_id
 from db.customer import get_customer_by_id
 from db.templates import get_template_by_id
 from db.reports import get_report_by_id
-from juniper_service import get_system_info, connect_to_device
+from juniper_service import get_system_info, connect_to_device, connect_via_jump_host, close_jump_connection, close_connection
 from datetime import datetime
 from groq import Groq
 import tempfile
@@ -133,7 +133,15 @@ def generate_pdf(report_id):
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
 
-    client = connect_to_device(device["device_ip"], device["username"], device["password"])
+    # Support jump host
+    jump_client = None
+    if customer["jump_host"] == 1:
+        jump_client, client = connect_via_jump_host(
+            customer["jump_host_ip"], customer["jump_host_username"], customer["jump_host_password"],
+            device["device_ip"], device["username"], device["password"]
+        )
+    else:
+        client = connect_to_device(device["device_ip"], device["username"], device["password"])
 
     buffer = BytesIO()
 
@@ -392,3 +400,9 @@ def generate_pdf(report_id):
 
     buffer.seek(0)
     return buffer, f"Report_{template_name}_{device_serial}.pdf"
+
+    # Clean up connections
+    if jump_client:
+        close_jump_connection(jump_client, client)
+    else:
+        close_connection(client)
