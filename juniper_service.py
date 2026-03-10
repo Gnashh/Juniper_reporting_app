@@ -76,6 +76,28 @@ def connect_via_jump_host(
     return jump_client, device_client
 
 
-
-
-
+def get_system_info(client):
+    """
+    Get system information from the connected device.
+    Returns a dictionary of system information.
+    """
+    result = run_command(client, "show system information")
+    
+    # Parse the output string to extract values
+    hostname = "Unknown"
+    model = "Unknown"
+    version = "Unknown"
+    
+    for line in result.split('\n'):
+        if 'Hostname:' in line or 'hostname:' in line:
+            hostname = line.split(':', 1)[1].strip()
+        elif 'Model:' in line or 'model:' in line:
+            model = line.split(':', 1)[1].strip()
+        elif 'Version:' in line or 'JUNOS' in line:
+            version = line.split(':', 1)[1].strip() if ':' in line else line.strip()
+    
+    return {
+        "hostname": hostname,
+        "model": model,
+        "version": version
+    }

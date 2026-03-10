@@ -9,6 +9,7 @@ from db.devices import get_device_by_id
 from db.customer import get_customer_by_id
 from db.templates import get_template_by_id
 from db.reports import get_report_by_id
+from juniper_service import get_system_info, connect_to_device
 from datetime import datetime
 from groq import Groq
 import tempfile
@@ -23,32 +24,21 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
 from io import BytesIO
 
-# Load environment variables
 load_dotenv()
-
-# Don't initialize Groq client here - do it inside the function
-# client = Groq(api_key=os.getenv('GROQ_API_KEY'))  # REMOVE THIS LINE
 
 
 def AI_report_summary(report):
     """Use Groq LLM to analyze report data and return structured JSON summary."""
     try:
-        # Check API key first
         api_key = os.getenv('GROQ_API_KEY')
         if not api_key:
-            error_msg = "GROQ_API_KEY not found in environment variables"
-            print(f"ERROR: {error_msg}")
+            print("GROQ_API_KEY not found")
             return None
-        
-        print(f"DEBUG: API key exists: {api_key[:10]}...")
-        
-        # Initialize Groq client HERE, not at module level
+
         client = Groq(api_key=api_key)
-        
+
         result = report["result"]
 
         user_prompt = """
@@ -82,8 +72,6 @@ Rules:
 Report Data:
 """ + str(result)
 
-        print("DEBUG: Attempting Groq API call...")
-        
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             temperature=0.2,
@@ -91,17 +79,11 @@ Report Data:
                 {
                     "role": "system",
                     "content": (
-                        "You are a senior network engineer and technical report writer. \n"
-                        "Your task is to analyze raw router/switch system reports and produce:\n"
-                        "1) A simple summary table\n"
-                        "2) A professional narrative explanation\n\n"
-                        "Rules:\n"
-                        "- Base your analysis ONLY on the provided data\n"
-                        "- Do NOT assume or invent missing values\n"
-                        "- If data is missing, return 'Not Reported'\n"
-                        "- Keep the table simple and consistent\n"
-                        "- Use professional networking terminology\n"
-                        "- Ensure the narrative is clear and structured"
+                        "You are a senior network engineer and technical report writer.\n"
+                        "Analyze router/switch reports and produce:\n"
+                        "1) Summary table\n"
+                        "2) Narrative explanation\n"
+                        "Only use provided data."
                     )
                 },
                 {
@@ -110,46 +92,28 @@ Report Data:
                 }
             ]
         )
-        
-        print("DEBUG: Groq API call successful")
+
         return response.choices[0].message.content
-        
+
     except Exception as e:
-        print(f"ERROR in AI_report_summary: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"AI summary generation failed: {e}")
         return None
 
 
 def _cli_table(text, cli_style, top_border=True, bottom_border=True):
-    """
-    Wrap a Preformatted CLI block in a styled Table that has a grey background.
+    tbl = Table([[Preformatted(text, cli_style)]], colWidths=[16 * cm])
 
-    By creating one small Table per batch (instead of one giant Table for all
-    output), each table is short enough for ReportLab to push to the next page
-    individually — giving us the background colour without the gap problem.
-
-    top_border / bottom_border control whether to draw the outer grey border on
-    that edge, so consecutive batches look like one seamless block.
-    """
-    tbl = Table(
-        [[Preformatted(text, cli_style)]],
-        colWidths=[16 * cm],
-    )
-
-    # Build border commands selectively so batches appear continuous
     cmds = [
-        ("BACKGROUND",    (0, 0), (-1, -1), colors.whitesmoke),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4 if top_border else 0),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4 if top_border else 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4 if bottom_border else 0),
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        # Always draw left/right borders
-        ("LINEABOVE",    (0, 0), (-1, 0),  0.5, colors.grey) if top_border    else ("NOSPLIT", (0, 0), (-1, -1)),
-        ("LINEBELOW",    (0, -1), (-1, -1), 0.5, colors.grey) if bottom_border else ("NOSPLIT", (0, 0), (-1, -1)),
-        ("LINEBEFORE",   (0, 0), (0, -1),  0.5, colors.grey),
-        ("LINEAFTER",    (-1, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.5, colors.grey) if top_border else ("NOSPLIT", (0, 0), (-1, -1)),
+        ("LINEBELOW", (0, -1), (-1, -1), 0.5, colors.grey) if bottom_border else ("NOSPLIT", (0, 0), (-1, -1)),
+        ("LINEBEFORE", (0, 0), (0, -1), 0.5, colors.grey),
+        ("LINEAFTER", (-1, 0), (-1, -1), 0.5, colors.grey),
     ]
 
     tbl.setStyle(TableStyle(cmds))
@@ -157,10 +121,7 @@ def _cli_table(text, cli_style, top_border=True, bottom_border=True):
 
 
 def generate_pdf(report_id):
-    """
-    Generate a PDF report: cover page, AI summary, and command outputs.
-    Returns a BytesIO buffer containing the PDF.
-    """
+
     report = get_report_by_id(report_id)
     customer = get_customer_by_id(report["customer_id"])
     device = get_device_by_id(report["device_id"])
@@ -169,16 +130,13 @@ def generate_pdf(report_id):
     customer_name = customer["name"]
     template_name = template["name"]
     device_serial = device["serial_number"]
-    device_username = device["username"]
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
 
-    # Create in-memory buffer instead of file
+    client = connect_to_device(device["device_ip"], device["username"], device["password"])
+
     buffer = BytesIO()
 
-    # ----------------------------
-    # DOCUMENT SETUP
-    # ----------------------------
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
@@ -215,17 +173,10 @@ def generate_pdf(report_id):
         name="CLIStyle",
         fontName="Courier",
         fontSize=8,
-        leading=9,
-        spaceBefore=0,
-        spaceAfter=0,
+        leading=9
     )
 
     story = []
-
-    # ----------------------------
-    # COVER PAGE
-    # ----------------------------
-    from reportlab.lib.utils import ImageReader
 
     host_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'IMG', 'ipnetcropped.jpg')
 
@@ -240,65 +191,45 @@ def generate_pdf(report_id):
     else:
         tmp_path = None
 
-    left_cell  = Image(tmp_path, width=3 * cm, height=3 * cm) if tmp_path else Paragraph("", styles["BodyStyle"])
+    left_cell = Image(tmp_path, width=3 * cm, height=3 * cm) if tmp_path else Paragraph("", styles["BodyStyle"])
     right_cell = Image(host_logo_path, width=10 * cm, height=4 * cm) if os.path.exists(host_logo_path) else Paragraph("", styles["BodyStyle"])
 
     logo_table = Table([[left_cell, right_cell]], colWidths=[8.5 * cm, 8.5 * cm])
-    logo_table.setStyle(TableStyle([
-        ("ALIGN",         (0, 0), (0, 0),   "LEFT"),
-        ("ALIGN",         (1, 0), (1, 0),   "RIGHT"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
     story.append(logo_table)
     story.append(Spacer(1, 100))
     story.append(Paragraph(f"{template_name}", styles["TitleStyle"]))
     story.append(Spacer(1, 30))
 
     meta_data = [
-        ["Customer",        customer_name],
-        ["Device Serial",   device_serial],
-        ["Device Hostname", device_username],
-        ["Description",     Paragraph(template_desc, styles["BodyStyle"])],
-        ["Generated",       datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+        ["Customer", customer_name],
+        ["Device Serial", device_serial],
+        ["Device Hostname", get_system_info(client)["hostname"]],
+        ["Description", Paragraph(template_desc, styles["BodyStyle"])],
+        ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
     ]
 
     meta_table = Table(meta_data, colWidths=[4 * cm, 12 * cm])
     meta_table.setStyle(TableStyle([
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND",    (0, 0), (0, -1),  colors.whitesmoke),
-        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("FONTSIZE",      (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
     ]))
 
     story.append(meta_table)
     story.append(PageBreak())
 
-    # ----------------------------
-    # AI SUMMARY SECTION
-    # ----------------------------
     if report.get("ai_summary") == 1 and report.get("result"):
-        print(f"DEBUG: AI Summary enabled for report {report_id}")
         try:
             story.append(Paragraph("System Summary", styles["HeaderStyle"]))
-            
-            print(f"DEBUG: Calling AI_report_summary...")
+
             summary_json = AI_report_summary(report)
-            print(f"DEBUG: AI summary returned: {summary_json[:100] if summary_json else 'None'}...")
 
             if not summary_json:
-                print("WARNING: AI summary returned None")
-                story.append(Paragraph("AI Summary unavailable - check server logs", styles["BodyStyle"]))
+                story.append(Paragraph("AI Summary unavailable.", styles["BodyStyle"]))
                 story.append(PageBreak())
-            elif summary_json and summary_json.strip():
-                print("DEBUG: Parsing JSON response...")
+
+            elif summary_json.strip():
                 summary_data = json.loads(summary_json)
 
                 table_rows = []
@@ -311,14 +242,9 @@ def generate_pdf(report_id):
                 if table_rows:
                     summary_table = Table(table_rows, colWidths=[6 * cm, 10 * cm])
                     summary_table.setStyle(TableStyle([
-                        ("GRID",          (0, 0), (-1, -1), 0.7, colors.black),
-                        ("BACKGROUND",    (0, 0), (0, -1),  colors.lightgrey),
-                        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                        ("FONTSIZE",      (0, 0), (-1, -1), 9),
+                        ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+                        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
                     ]))
                     story.append(summary_table)
                     story.append(Spacer(1, 15))
@@ -331,14 +257,9 @@ def generate_pdf(report_id):
                             story.append(Paragraph(para.replace("\n", "<br/>"), styles["BodyStyle"]))
 
                 story.append(PageBreak())
-                print("DEBUG: AI summary section completed successfully")
 
-        except (json.JSONDecodeError, Exception) as e:
-            print(f"ERROR in AI summary section: {type(e).__name__}: {str(e)}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print(f"DEBUG: AI Summary disabled or no results (ai_summary={report.get('ai_summary')}, has_result={bool(report.get('result'))})")
+        except Exception as e:
+            print(f"AI summary section error: {e}")
 
     # ----------------------------
     # MANUAL SUMMARY SECTION
@@ -405,7 +326,6 @@ def generate_pdf(report_id):
             if not isinstance(result_data, dict):
                 continue
 
-            # ── HEADER ────────────────────────────────────────────────────
             if result_data.get("type") == "Header":
                 if story and not isinstance(story[-1], PageBreak):
                     story.append(PageBreak())
@@ -413,13 +333,11 @@ def generate_pdf(report_id):
                 story.append(Spacer(1, 10))
                 continue
 
-            # ── COMMAND ENTRY ──────────────────────────────────────────────
             command_idx += 1
 
             cmd_description = result_data.get("description", "")
             output          = result_data.get("output", "")
 
-            # Wrap long lines so nothing overflows the page width
             max_line_length = 90
             wrapped_lines = []
             for line in output.split('\n'):
@@ -428,17 +346,7 @@ def generate_pdf(report_id):
                     line = line[max_line_length:]
                 wrapped_lines.append(line)
 
-            # ------------------------------------------------------------------
-            # Split output into small batches (BATCH lines each).
-            # Each batch becomes its own small Table with grey background.
-            # Small tables can be pushed to the next page individually, so
-            # ReportLab never needs to leave a big blank gap.
-            #
-            # Consecutive batch-tables share borders so they look like one
-            # continuous block: the first gets a top border, the last gets a
-            # bottom border, middle ones get neither top nor bottom border.
-            # ------------------------------------------------------------------
-            BATCH = 70  # lines per table — small enough to fit partial pages
+            BATCH = 70
 
             batches = []
             for i in range(0, len(wrapped_lines), BATCH):
@@ -446,7 +354,6 @@ def generate_pdf(report_id):
 
             n = len(batches)
 
-            # Build the CLI table flowables
             cli_flowables = []
             for i, batch_text in enumerate(batches):
                 is_first = (i == 0)
@@ -457,9 +364,6 @@ def generate_pdf(report_id):
                                bottom_border=is_last)
                 )
 
-            # Keep description label + first batch together (anti-orphan).
-            # The remaining batches are added directly to the story so they
-            # can flow freely across page boundaries.
             if cmd_description:
                 desc_para = Paragraph(f"<b>Description:</b> {cmd_description}", styles["BodyStyle"])
                 if cli_flowables:
@@ -472,7 +376,6 @@ def generate_pdf(report_id):
                 for tbl in cli_flowables:
                     story.append(tbl)
 
-            # Page break between commands, not after the last one
             if command_idx < command_count:
                 story.append(PageBreak())
 
@@ -481,13 +384,11 @@ def generate_pdf(report_id):
     # ----------------------------
     doc.build(story)
 
-    # Clean up temp logo file
     if customer_logo and tmp_path and os.path.exists(tmp_path):
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
 
-    # Return buffer positioned at start
     buffer.seek(0)
     return buffer, f"Report_{template_name}_{device_serial}.pdf"
