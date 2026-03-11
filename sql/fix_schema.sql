@@ -19,6 +19,7 @@ CREATE TABLE devices (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
     serial_number VARCHAR(50),
+    hostname VARCHAR(50),
     device_type VARCHAR(100) NOT NULL,
     device_model VARCHAR(255) NOT NULL,
     device_ip VARCHAR(45) NOT NULL,

@@ -27,6 +27,7 @@ def show_device_page():
                     d.customer_id,
                     c.name AS customer_name,
                     d.serial_number,
+                    d.hostname,
                     d.device_type,
                     d.device_model,
                     d.device_ip,
@@ -48,6 +49,7 @@ def show_device_page():
         "customer_id": "Customer ID",
         "customer_name": "Customer Name",
         "serial_number": "Serial Number",
+        "hostname": "Hostname",
         "device_type": "Device Type",
         "device_model": "Device Model",
         "device_ip": "Device IP",
@@ -64,7 +66,7 @@ def show_device_page():
             "Select": st.column_config.CheckboxColumn("Select", help="Select rows to delete", width="small"),
             "Customer ID": None,
         },
-        disabled=["Device ID", "Customer Name", "Serial Number", "Username",
+        disabled=["Device ID", "Customer Name", "Serial Number", "Hostname", "Username",
                    "Device Type", "Device Model", "Device IP", "Created At"],
     )
 

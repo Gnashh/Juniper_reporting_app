@@ -1,6 +1,8 @@
 import json
 import streamlit as st
 import pandas as pd
+from PIL import Image
+import io
 
 from db.customer import get_customers
 from db.templates import create_template, update_template, delete_template
@@ -226,6 +228,17 @@ def add_template_dialog():
     name = st.text_input("Template Name")
     description = st.text_area("Template Description")
 
+    company_logo_file = st.file_uploader("Upload Company Logo", type=["jpg", "jpeg", "png"])
+    
+    company_logo = None
+    if company_logo_file:
+        company_logo = company_logo_file.read()
+        try:
+            st.image(company_logo, width=100, caption="Logo Preview")
+        except Exception as e:
+            st.error(f"Invalid image file: {str(e)}")
+            company_logo = None
+
     st.markdown("### Manual Summary")
 
     enable_summary = st.toggle("Enable Summary")
@@ -273,6 +286,7 @@ def add_template_dialog():
                 general_desc=description,
                 manual_summary_desc=summary_desc if enable_summary else None,
                 manual_summary_table=summary_table if enable_summary else None,
+                company_logo=company_logo,
             )
 
             st.success("Template created")
@@ -325,9 +339,11 @@ def update_template_dialog(selected_templates):
     for _, template in selected_templates.iterrows():
 
         template_id = template["Template ID"]
-
         st.markdown(f"### Template {template_id}")
 
+        # -------------------------
+        # Template fields
+        # -------------------------
         name = st.text_input(
             "Template Name",
             value=template["Name"],
@@ -340,8 +356,10 @@ def update_template_dialog(selected_templates):
             key=f"desc_{template_id}",
         )
 
+        # -------------------------
+        # Customer selector
+        # -------------------------
         customer_index = 0
-
         if template.get("Customer Name") in customer_names:
             customer_index = customer_names.index(template["Customer Name"])
 
@@ -352,6 +370,212 @@ def update_template_dialog(selected_templates):
             key=f"customer_{template_id}",
         )
 
+        # -------------------------
+        # Show existing logo safely
+        # -------------------------
+        existing_logo = template.get("Company Logo")
+
+        if isinstance(existing_logo, (bytes, bytearray)) and len(existing_logo) > 0:
+            try:
+                image = Image.open(io.BytesIO(existing_logo))
+                image.verify()  # validate image
+                image = Image.open(io.BytesIO(existing_logo))  # reopen after verify
+                st.image(image, width=100, caption="Current Logo")
+            except Exception:
+                st.warning("Stored logo is corrupted or not a valid image.")
+
+        st.markdown("Upload a new logo to replace the current one.")
+
+        # -------------------------
+        # Upload new logo
+        # -------------------------
+        company_logo_file = st.file_uploader(
+            "Upload Company Logo",
+            type=["jpg", "jpeg", "png"],
+            key=f"logo_{template_id}",
+        )
+
+        company_logo = None
+
+        if company_logo_file:
+            try:
+                company_logo = company_logo_file.read()
+                image = Image.open(io.BytesIO(company_logo))
+                st.image(image, width=100, caption="New Logo Preview")
+            except Exception as e:
+                st.error(f"Invalid image file: {str(e)}")
+                company_logo = None
+
+        # -------------------------
+        # Manual Summary Section
+        # -------------------------
+        st.markdown("### Manual Summary")
+        
+        # Check if manual summary exists
+        has_manual_summary = template.get("Manual Summary Description") is not None
+        
+        enable_summary = st.toggle(
+            "Enable Summary", 
+            value=has_manual_summary,
+            key=f"enable_summary_{template_id}"
+        )
+        
+        manual_summary_desc = None
+        manual_summary_table = None
+        
+        if enable_summary:
+            # Manual Summary Description
+            manual_summary_desc = st.text_area(
+                "Summary Description",
+                value=template.get("Manual Summary Description", ""),
+                key=f"manual_summary_desc_{template_id}",
+            )
+            
+            # Manual Summary Table
+            st.markdown("**Summary Table**")
+            
+            # Parse existing table data
+            existing_table = template.get("Manual Summary Table")
+            if isinstance(existing_table, str):
+                try:
+                    existing_table = json.loads(existing_table)
+                except:
+                    existing_table = []
+            elif not isinstance(existing_table, list):
+                existing_table = []
+            
+            # Initialize session state for this template's summary fields
+            session_key = f"summary_fields_{template_id}"
+            if session_key not in st.session_state:
+                if existing_table:
+                    st.session_state[session_key] = existing_table
+                else:
+                    st.session_state[session_key] = [{"field": "", "value": ""}]
+            
+            # Render the summary table editor
+            manual_summary_table = render_summary_fields(session_key)
+
+
+
+        # -------------------------
+        # Commands Section
+        # -------------------------
+        st.markdown("### Commands")
+        
+        # Parse existing commands
+        existing_commands = template.get("Command")
+        if isinstance(existing_commands, str):
+            try:
+                existing_commands = json.loads(existing_commands)
+            except:
+                existing_commands = []
+        elif not isinstance(existing_commands, list):
+            existing_commands = []
+        
+        # Initialize session state for this template's commands
+        commands_key = f"commands_{template_id}"
+        if commands_key not in st.session_state:
+            st.session_state[commands_key] = existing_commands if existing_commands else []
+        
+        # Command builder buttons
+        c1, c2, c3, c4 = st.columns(4)
+        
+        with c1:
+            if st.button("Add Header", key=f"add_header_{template_id}", use_container_width=True):
+                st.session_state[commands_key].append({"type": "Header", "text": ""})
+                st.rerun()
+        
+        with c2:
+            if st.button("Add Predefined", key=f"add_predefined_{template_id}", use_container_width=True):
+                st.session_state[commands_key].append({"type": "Predefined", "command": ""})
+                st.rerun()
+        
+        with c3:
+            if st.button("Add Custom", key=f"add_custom_{template_id}", use_container_width=True):
+                st.session_state[commands_key].append({"type": "Custom", "command": ""})
+                st.rerun()
+        
+        with c4:
+            if st.button(
+                "Delete Last",
+                key=f"delete_last_{template_id}",
+                use_container_width=True,
+                disabled=len(st.session_state[commands_key]) == 0,
+            ):
+                st.session_state[commands_key].pop()
+                st.rerun()
+        
+        st.divider()
+        
+        # Render command items
+        updated_commands = []
+        
+        for i, item in enumerate(st.session_state[commands_key]):
+            
+            st.markdown(f"**Item {i+1}**")
+            
+            if item.get("type") == "Header":
+                
+                text = st.text_input(
+                    "Header Text",
+                    value=item.get("text", ""),
+                    key=f"header_{template_id}_{i}",
+                )
+                
+                st.session_state[commands_key][i]["text"] = text
+                
+                if text.strip():
+                    updated_commands.append({"type": "Header", "text": text})
+            
+            elif item.get("type") == "Predefined":
+                
+                # Find index of current command in predefined list
+                current_cmd = item.get("command", "")
+                cmd_index = 0
+                if current_cmd in PREDEFINED_COMMANDS:
+                    cmd_index = PREDEFINED_COMMANDS.index(current_cmd)
+                
+                cmd = st.selectbox(
+                    "Command",
+                    PREDEFINED_COMMANDS,
+                    index=cmd_index,
+                    key=f"cmd_{template_id}_{i}",
+                )
+                
+                desc = st.text_area(
+                    "Description",
+                    value=item.get("description", ""),
+                    key=f"desc_{template_id}_{i}",
+                )
+                
+                updated_commands.append(
+                    {"type": "Predefined", "command": cmd, "description": desc}
+                )
+            
+            else:  # Custom
+                
+                cmd = st.text_input(
+                    "Custom Command",
+                    value=item.get("command", ""),
+                    key=f"custom_{template_id}_{i}"
+                )
+                
+                desc = st.text_area(
+                    "Description",
+                    value=item.get("description", ""),
+                    key=f"custom_desc_{template_id}_{i}"
+                )
+                
+                if cmd.strip():
+                    updated_commands.append(
+                        {"type": "Custom", "command": cmd, "description": desc}
+                    )
+            
+            st.divider()
+
+        # -------------------------
+        # Buttons
+        # -------------------------
         col1, col2 = st.columns(2)
 
         with col1:
@@ -363,16 +587,27 @@ def update_template_dialog(selected_templates):
         with col2:
             if st.button("Update", key=f"update_{template_id}"):
 
+                if not updated_commands:
+                    st.error("Add at least one command")
+                    return
+
+                # keep existing logo if no new upload
+                final_logo = company_logo if company_logo else existing_logo
+
+                # Build description array from commands
+                description_array = [x.get("description", "") for x in updated_commands]
+
                 update_template(
                     template_id,
                     name,
-                    template["Description"],
-                    template["Command"],
+                    description_array,
+                    updated_commands,
                     customers[selected_customer],
-                    desc,
+                    desc,  # This goes to general_desc
                     None,
-                    None,
-                    None,
+                    manual_summary_desc if enable_summary else None,
+                    manual_summary_table if enable_summary else None,
+                    final_logo,
                 )
 
                 st.success(f"Template {template_id} updated")

@@ -69,6 +69,7 @@ def show_report_page():
             "Customer ID": None,
             "Template ID": None,
             "Result": None,
+            "AI Summary": None,
         },
         disabled=["Report ID", "Device", "Customer Name", "Template Name", "Created At"],
     )
@@ -99,5 +100,5 @@ def show_report_page():
     if st.session_state.show_delete_report:
         delete_report_dialog(selected_rows["Report ID"].tolist())
     if st.session_state.show_view_report and not selected_rows.empty:
-        download_report_dialog(selected_rows["Report ID"].tolist()[0])
+        download_report_dialog(selected_rows["Report ID"].tolist())
 

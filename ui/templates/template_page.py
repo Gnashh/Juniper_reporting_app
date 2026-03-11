@@ -32,7 +32,8 @@ def show_template_page():
                     t.general_desc,
                     t.update_time,
                     t.manual_summary_desc,
-                    t.manual_summary_table
+                    t.manual_summary_table,
+                    t.company_logo
                 FROM command_templates t
                 LEFT JOIN customers c ON t.customer_id = c.id
                 LIMIT 1000
@@ -56,6 +57,7 @@ def show_template_page():
         "update_time": "Last Updated",
         "manual_summary_desc": "Manual Summary Description",
         "manual_summary_table": "Manual Summary Table",
+        "company_logo": "Company Logo",
     })
     df_templates.insert(0, "Select", False)
 
@@ -68,8 +70,9 @@ def show_template_page():
             "Customer ID": None,
             "Description": None,
             "Command": None,
+            "Company Logo": None,
         },
-        disabled=["Template ID", "Name", "Customer Name", "Created At", "General Description"],
+        disabled=["Template ID", "Name", "Customer Name", "Created At", "General Description", "Last Updated", "Manual Summary Description", "Manual Summary Table"],
     )
 
     selected_rows = edited_df[edited_df["Select"] == True]
