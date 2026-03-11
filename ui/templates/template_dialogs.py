@@ -336,7 +336,9 @@ def update_template_dialog(selected_templates):
     customers = get_customer_options()
     customer_names = list(customers.keys())
 
-    for _, template in selected_templates.iterrows():
+    all_updates = []
+
+    for idx, (_, template) in enumerate(selected_templates.iterrows()):
 
         template_id = template["Template ID"]
         st.markdown(f"### Template {template_id}")
@@ -573,46 +575,58 @@ def update_template_dialog(selected_templates):
             
             st.divider()
 
-        # -------------------------
-        # Buttons
-        # -------------------------
-        col1, col2 = st.columns(2)
+        # Store the update data
+        all_updates.append({
+            "template_id": template_id,
+            "name": name,
+            "desc": desc,
+            "selected_customer": selected_customer,
+            "company_logo": company_logo,
+            "existing_logo": existing_logo,
+            "enable_summary": enable_summary,
+            "manual_summary_desc": manual_summary_desc,
+            "manual_summary_table": manual_summary_table,
+            "updated_commands": updated_commands,
+        })
 
-        with col1:
-            if st.button("Cancel", key=f"cancel_{template_id}"):
+        if idx < len(selected_templates) - 1:
+            st.divider()
 
-                st.session_state.show_update_template = False
-                st.rerun()
+    # -------------------------
+    # Buttons (outside loop)
+    # -------------------------
+    col1, col2 = st.columns(2)
 
-        with col2:
-            if st.button("Update", key=f"update_{template_id}"):
+    with col1:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.show_update_template = False
+            st.rerun()
 
-                if not updated_commands:
-                    st.error("Add at least one command")
+    with col2:
+        if st.button("Update All", use_container_width=True):
+            
+            for update_data in all_updates:
+                
+                if not update_data["updated_commands"]:
+                    st.error(f"Template {update_data['template_id']}: Add at least one command")
                     return
 
-                # keep existing logo if no new upload
-                final_logo = company_logo if company_logo else existing_logo
-
-                # Build description array from commands
-                description_array = [x.get("description", "") for x in updated_commands]
+                final_logo = update_data["company_logo"] if update_data["company_logo"] else update_data["existing_logo"]
+                description_array = [x.get("description", "") for x in update_data["updated_commands"]]
 
                 update_template(
-                    template_id,
-                    name,
+                    update_data["template_id"],
+                    update_data["name"],
                     description_array,
-                    updated_commands,
-                    customers[selected_customer],
-                    desc,  # This goes to general_desc
+                    update_data["updated_commands"],
+                    customers[update_data["selected_customer"]],
+                    update_data["desc"],
                     None,
-                    manual_summary_desc if enable_summary else None,
-                    manual_summary_table if enable_summary else None,
+                    update_data["manual_summary_desc"] if update_data["enable_summary"] else None,
+                    update_data["manual_summary_table"] if update_data["enable_summary"] else None,
                     final_logo,
                 )
 
-                st.success(f"Template {template_id} updated")
-
-                st.session_state.show_update_template = False
-                st.rerun()
-
-        st.divider()
+            st.success(f"Updated {len(all_updates)} template(s)")
+            st.session_state.show_update_template = False
+            st.rerun()
