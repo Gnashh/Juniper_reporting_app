@@ -132,6 +132,7 @@ def generate_pdf(report_id):
     device_serial = device["serial_number"]
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
+    host_logo_path = template.get("company_logo")
 
     # Support jump host
     jump_client = None
@@ -186,23 +187,36 @@ def generate_pdf(report_id):
 
     story = []
 
-    host_logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'IMG', 'ipnetcropped.jpg')
+    # Handle host logo
+    host_tmp_path = None
+    if host_logo_path:
+        try:
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+            tmp_file.write(host_logo_path)
+            tmp_file.close()
+            host_tmp_path = tmp_file.name
+        except Exception:
+            host_tmp_path = None
 
+    # Handle customer logo
+    customer_tmp_path = None
     if customer_logo:
         try:
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
             tmp_file.write(customer_logo)
             tmp_file.close()
-            tmp_path = tmp_file.name
+            customer_tmp_path = tmp_file.name
         except Exception:
-            tmp_path = None
-    else:
-        tmp_path = None
+            customer_tmp_path = None
 
-    left_cell = Image(tmp_path, width=3 * cm, height=3 * cm) if tmp_path else Paragraph("", styles["BodyStyle"])
-    right_cell = Image(host_logo_path, width=10 * cm, height=4 * cm) if os.path.exists(host_logo_path) else Paragraph("", styles["BodyStyle"])
+    left_cell = Image(customer_tmp_path, width=3 * cm, height=3 * cm) if customer_tmp_path else Paragraph("", styles["BodyStyle"])
+    right_cell = Image(host_tmp_path, width=3 * cm, height=3 * cm) if host_tmp_path else Paragraph("", styles["BodyStyle"])
 
-    logo_table = Table([[left_cell, right_cell]], colWidths=[8.5 * cm, 8.5 * cm])
+    logo_table = Table([[left_cell, right_cell]], colWidths=[13 * cm, 13 * cm])
+    logo_table.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
     story.append(logo_table)
     story.append(Spacer(1, 100))
     story.append(Paragraph(f"{template_name}", styles["TitleStyle"]))
@@ -392,9 +406,16 @@ def generate_pdf(report_id):
     # ----------------------------
     doc.build(story)
 
-    if customer_logo and tmp_path and os.path.exists(tmp_path):
+    # Clean up temp files
+    if customer_tmp_path and os.path.exists(customer_tmp_path):
         try:
-            os.unlink(tmp_path)
+            os.unlink(customer_tmp_path)
+        except Exception:
+            pass
+
+    if host_tmp_path and os.path.exists(host_tmp_path):
+        try:
+            os.unlink(host_tmp_path)
         except Exception:
             pass
 
