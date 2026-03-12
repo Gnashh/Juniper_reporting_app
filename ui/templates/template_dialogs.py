@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from PIL import Image
 import io
+from datetime import datetime
 
 from db.customer import get_customers
 from db.templates import create_template, update_template, delete_template
@@ -457,8 +458,6 @@ def update_template_dialog(selected_templates):
             # Render the summary table editor
             manual_summary_table = render_summary_fields(session_key)
 
-
-
         # -------------------------
         # Commands Section
         # -------------------------
@@ -575,6 +574,13 @@ def update_template_dialog(selected_templates):
             
             st.divider()
 
+                    
+        update_time = st.datetime_input(
+            "Update Time",
+            value=datetime.now(),
+            key=f"update_time_{template_id}",
+        )
+
         # Store the update data
         all_updates.append({
             "template_id": template_id,
@@ -587,6 +593,7 @@ def update_template_dialog(selected_templates):
             "manual_summary_desc": manual_summary_desc,
             "manual_summary_table": manual_summary_table,
             "updated_commands": updated_commands,
+            "update_time": update_time,
         })
 
         if idx < len(selected_templates) - 1:
@@ -621,7 +628,7 @@ def update_template_dialog(selected_templates):
                     update_data["updated_commands"],
                     customers[update_data["selected_customer"]],
                     update_data["desc"],
-                    None,
+                    update_data["update_time"],
                     update_data["manual_summary_desc"] if update_data["enable_summary"] else None,
                     update_data["manual_summary_table"] if update_data["enable_summary"] else None,
                     final_logo,
