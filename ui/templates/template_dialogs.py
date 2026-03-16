@@ -67,6 +67,7 @@ def get_customer_options():
             "jump_host_username",
             "jump_host_password",
             "images",
+            "device_type",
         ],
     )
 

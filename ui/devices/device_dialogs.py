@@ -91,7 +91,7 @@ def update_device_dialog(selected_devices):
     customers_df = pd.DataFrame(
         customers_data,
         columns=["id", "name", "email", "created_at", "jump_host",
-                 "jump_host_ip", "jump_host_username", "jump_host_password", "images"],
+                 "jump_host_ip", "jump_host_username", "jump_host_password", "images", "device_type"],
     )
     customer_options = {row["name"]: row["id"] for _, row in customers_df.iterrows()}
     customer_names = list(customer_options.keys())

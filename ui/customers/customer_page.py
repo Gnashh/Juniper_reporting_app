@@ -34,6 +34,7 @@ def show_customer_page():
         "name": "Customer Name",
         "email": "Email",
         "jump_host": "Jump Host",
+        "device_type": "Device Type",        
         "created_at": "Created At",
         "jump_host_ip": "Jump Host IP",
         "jump_host_username": "Jump Host Username",
@@ -53,9 +54,10 @@ def show_customer_page():
             "Jump Host Username": None,
             "Jump Host Password": None,
             "Images": None,
+            "Device Type": None,
         },
         disabled=["Customer ID", "Customer Name", "Email", "Jump Host", "Created At",
-                   "Jump Host IP", "Jump Host Username", "Jump Host Password", "Images"],
+                   "Jump Host IP", "Jump Host Username", "Jump Host Password", "Images", "Device Type"],
     )
 
     selected_rows = edited_df[edited_df["Select"] == True]

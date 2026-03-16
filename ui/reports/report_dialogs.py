@@ -6,7 +6,7 @@ from db.customer import get_customers, get_customer_by_id
 from db.devices import get_devices_by_customer_id, get_device_by_id
 from db.templates import get_templates_by_customer_id, get_template_by_id
 from db.reports import create_report, delete_report, get_report_by_id
-from juniper_service import connect_to_device, close_connection, run_command, connect_via_jump_host
+from juniper_service import connect_to_device, close_connection, run_command, nested_ssh
 from gen_PDF import generate_pdf
 from ui.utils import create_dismiss_handler
 
@@ -17,7 +17,7 @@ def create_report_dialog():
     customers_data = get_customers()
     customers_df = pd.DataFrame(customers_data,
                                 columns=["id", "name", "email", "jump_host", "created_at",
-                                         "jump_host_ip", "jump_host_username", "jump_host_password", "images"])
+                                         "jump_host_ip", "jump_host_username", "jump_host_password", "images", "device_type"])
 
     if customers_df.empty:
         st.error("No customers found. Please create a customer first.")
@@ -87,12 +87,16 @@ def create_report_dialog():
             
             with st.spinner(f"Connecting to device {device['hostname']}..."):
                 if customer["jump_host"] == 1:
-                    jump, client = connect_via_jump_host(
+                    from juniper_service import connect_via_jump_host, run_command_via_jump, close_jump_connection
+                    client = connect_via_jump_host(
+                        customer["device_type"],
                         customer["jump_host_ip"], customer["jump_host_username"], customer["jump_host_password"],
-                        device["device_ip"], device["username"], device["password"],
+                        device["device_ip"], device["username"], device["password"]
                     )
+                    jump_mode = True
                 else:
-                    client = connect_to_device(device["device_ip"], device["username"], device["password"])
+                    client = connect_to_device(device["device_ip"], device["username"], device["password"], customer["device_type"])
+                    jump_mode = False
 
             all_results = []
             with st.spinner(f"Executing commands on {device['hostname']}..."):
@@ -103,14 +107,20 @@ def create_report_dialog():
                         cmd = item.get("command")
                         cmd_description = item.get("description", "")
                         try:
-                            result = run_command(client, cmd)
+                            if jump_mode:
+                                result = run_command_via_jump(client, cmd)
+                            else:
+                                result = run_command(client, cmd)
                             all_results.append({"type": "Command", "command": cmd, "description": cmd_description,
                                                 "output": result, "status": "success"})
                         except Exception as e:
                             all_results.append({"type": "Command", "command": cmd, "description": cmd_description,
                                                 "output": str(e), "status": "error"})
 
-            close_connection(client)
+            if jump_mode:
+                close_jump_connection(client)
+            else:
+                close_connection(client)
             create_report(dev_id, customer_id, template_id, all_results, ai_summary_value)
         
         st.success(f"Created {len(device_id)} report(s) successfully!")
@@ -146,24 +156,24 @@ def delete_report_dialog(report_ids):
                 st.error(f"Failed to delete reports: {str(e)}")
 
 
-@st.dialog("Download Report", on_dismiss=create_dismiss_handler("show_view_report"), width="small")
-def download_report_dialog(report_ids):
-    """Download/view report dialog"""
+# @st.dialog("Download Report", on_dismiss=create_dismiss_handler("show_view_report"), width="small")
+# def download_report_dialog(report_ids):
+#     """Download/view report dialog"""
     
-    for report_id in report_ids:
-        try:
-            with st.spinner(f"Generating report {report_id}..."):
-                pdf_buffer, filename = generate_pdf(report_id)                
-                st.download_button(
-                    f"Download {filename}",
-                    data=pdf_buffer,
-                    file_name=filename,
-                    mime="application/pdf",
-                    key=f"download_report_{report_id}"
-                )
-        except Exception as e:
-            st.error(f"Failed to generate report {report_id}: {str(e)}")
+#     for report_id in report_ids:
+#         try:
+#             with st.spinner(f"Generating report {report_id}..."):
+#                 pdf_buffer, filename = generate_pdf(report_id)                
+#                 st.download_button(
+#                     f"Download {filename}",
+#                     data=pdf_buffer,
+#                     file_name=filename,
+#                     mime="application/pdf",
+#                     key=f"download_report_{report_id}"
+#                 )
+#         except Exception as e:
+#             st.error(f"Failed to generate report {report_id}: {str(e)}")
 
-    if st.button("Close"):
-        st.session_state.show_view_report = False
-        st.rerun()
+#     if st.button("Close"):
+#         st.session_state.show_view_report = False
+#         st.rerun()

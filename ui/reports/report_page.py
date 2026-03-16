@@ -1,12 +1,31 @@
+import base64
+
 """Report Details page"""
 import streamlit as st
 import pandas as pd
 from db.connect_to_db import connect_to_db
 from ui.reports.report_dialogs import (
     create_report_dialog,
-    delete_report_dialog,
-    download_report_dialog,
+    delete_report_dialog
 )
+from gen_PDF import generate_pdf
+
+
+def auto_download(pdf_buffer, filename):
+    b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
+    
+    download_link = f"""
+        <html>
+        <body>
+        <a id="download_link" href="data:application/pdf;base64,{b64}" download="{filename}"></a>
+        <script>
+            document.getElementById('download_link').click();
+        </script>
+        </body>
+        </html>
+    """
+    
+    st.components.v1.html(download_link, height=0)
 
 
 def show_report_page():
@@ -78,6 +97,7 @@ def show_report_page():
 
     # Action buttons
     col1, col2, col3 = st.columns(3)
+
     with col1:
         if st.button("➕ Create Report"):
             st.session_state.show_create_report = True
@@ -85,8 +105,16 @@ def show_report_page():
         if selected_rows.empty:
             st.button("📋 Download Report", disabled=True)
         else:
-            if st.button("📋 Download Report"):
-                st.session_state.show_view_report = True
+            report_ids = selected_rows["Report ID"].tolist()
+
+            if st.button("📋 Download Selected Report(s)"):
+                for report_id in report_ids:
+                    try:
+                        with st.spinner(f"Generating report {report_id}..."):
+                            pdf_buffer, filename = generate_pdf(report_id)
+                            auto_download(pdf_buffer, filename)
+                    except Exception as e:
+                        st.error(f"Failed to generate report {report_id}: {str(e)}")
     with col3:
         if selected_rows.empty:
             st.button("🗑 Delete Report", disabled=True)
@@ -99,6 +127,6 @@ def show_report_page():
         create_report_dialog()
     if st.session_state.show_delete_report:
         delete_report_dialog(selected_rows["Report ID"].tolist())
-    if st.session_state.show_view_report and not selected_rows.empty:
-        download_report_dialog(selected_rows["Report ID"].tolist())
+    # if st.session_state.show_view_report and not selected_rows.empty:
+    #     download_report_dialog(selected_rows["Report ID"].tolist())
 

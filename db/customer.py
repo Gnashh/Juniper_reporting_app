@@ -25,7 +25,7 @@ def get_customer_by_id(id):
     customer = cursor.fetchone()
     return customer
 
-def create_customer(name, email, jump_host, jump_host_ip=None, jump_host_username=None, jump_host_password=None, image=None):
+def create_customer(name, email, jump_host, jump_host_ip=None, jump_host_username=None, jump_host_password=None, image=None, device_type=None):
     """Insert a new customer; returns the new row id."""
     conn = connect_to_db()
     cursor = conn.cursor()
@@ -36,13 +36,13 @@ def create_customer(name, email, jump_host, jump_host_ip=None, jump_host_usernam
         image_data = image.read()
     
     cursor.execute(
-        "INSERT INTO customers (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, images) VALUES (%s, %s, %s, %s, %s, %s, %s)", 
-        (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image_data)
+        "INSERT INTO customers (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, images, device_type) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", 
+        (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image_data, device_type)        
     )
     conn.commit()
     return cursor.lastrowid
 
-def update_customer(id, name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image=None):
+def update_customer(id, name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image=None, device_type=None):
     """Update customer; image is only updated if a new file is provided."""
     conn = connect_to_db()
     cursor = conn.cursor()
@@ -51,14 +51,14 @@ def update_customer(id, name, email, jump_host, jump_host_ip, jump_host_username
     if image is not None:
         image_data = image.read()
         cursor.execute(
-            "UPDATE customers SET name = %s, email = %s, jump_host = %s, jump_host_ip = %s, jump_host_username = %s, jump_host_password = %s, images = %s WHERE id = %s", 
-            (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image_data, id)
+            "UPDATE customers SET name = %s, email = %s, jump_host = %s, jump_host_ip = %s, jump_host_username = %s, jump_host_password = %s, images = %s, device_type = %s WHERE id = %s", 
+            (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, image_data, device_type, id)            
         )
     else:
         # Don't update image column if no new image provided
         cursor.execute(
-            "UPDATE customers SET name = %s, email = %s, jump_host = %s, jump_host_ip = %s, jump_host_username = %s, jump_host_password = %s WHERE id = %s", 
-            (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, id)
+            "UPDATE customers SET name = %s, email = %s, jump_host = %s, jump_host_ip = %s, jump_host_username = %s, jump_host_password = %s, device_type = %s WHERE id = %s", 
+            (name, email, jump_host, jump_host_ip, jump_host_username, jump_host_password, device_type, id)            
         )
     
     conn.commit()

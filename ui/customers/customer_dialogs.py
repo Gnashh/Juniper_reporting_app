@@ -17,10 +17,12 @@ def add_customer_dialog():
         image = st.file_uploader("Upload Image, optional, 1x1 recommended", type=["jpg", "jpeg", "png"])
 
         if jump_host == "Yes":
+            device_type = st.selectbox("Device Type", ["Cisco IOS", "Cisco NX-OS", "Juniper", "Arista", "Linux"])
             jump_host_ip = st.text_input("Jump Host IP")
             jump_host_username = st.text_input("Jump Host Username")
             jump_host_password = st.text_input("Jump Host Password", type="password")
         else:
+            device_type = None
             jump_host_ip = None
             jump_host_username = None
             jump_host_password = None
@@ -50,7 +52,7 @@ def add_customer_dialog():
 
     jump_host_value = 1 if jump_host == "Yes" else 0
     try:
-        create_customer(name, email, jump_host_value, jump_host_ip, jump_host_username, jump_host_password, image)
+        create_customer(name, email, jump_host_value, jump_host_ip, jump_host_username, jump_host_password, image, device_type)
         st.success("Customer added successfully")
         st.session_state.show_add_customer = False
         st.rerun()
@@ -109,10 +111,12 @@ def update_customer_dialog(selected_customers):
             jump_host = st.radio("Jump Host?", ["No", "Yes"], index=1 if jump_host_default == "Yes" else 0, key=f"jump_host_{customer_id}")
 
             if jump_host == "Yes":
+                device_type = st.selectbox("Device Type", ["Cisco IOS", "Cisco NX-OS", "Juniper", "Arista", "Linux"], key=f"device_type_{customer_id}")                
                 jump_host_ip = st.text_input("Jump Host IP", value=full_customer.get("jump_host_ip") or "", key=f"jump_host_ip_{customer_id}")
                 jump_host_username = st.text_input("Jump Host Username", value=full_customer.get("jump_host_username") or "", key=f"jump_host_username_{customer_id}")
                 jump_host_password = st.text_input("Jump Host Password", value=full_customer.get("jump_host_password") or "", type="password", key=f"jump_host_password_{customer_id}")
             else:
+                device_type = None                
                 jump_host_ip = full_customer.get("jump_host_ip")
                 jump_host_username = full_customer.get("jump_host_username")
                 jump_host_password = full_customer.get("jump_host_password")
@@ -123,6 +127,7 @@ def update_customer_dialog(selected_customers):
                 "email": email,
                 "image": image,
                 "jump_host": jump_host,
+                "device_type": device_type,                
                 "jump_host_ip": jump_host_ip,
                 "jump_host_username": jump_host_username,
                 "jump_host_password": jump_host_password,
@@ -157,7 +162,7 @@ def update_customer_dialog(selected_customers):
                 for data in updated_data:
                     try:
                         jump_host_value = 1 if data["jump_host"] == "Yes" else 0
-                        update_customer(data["id"], data["name"], data["email"], jump_host_value, data["jump_host_ip"], data["jump_host_username"], data["jump_host_password"], data["image"])
+                        update_customer(data["id"], data["name"], data["email"], jump_host_value, data["jump_host_ip"], data["jump_host_username"], data["jump_host_password"], data["image"], data["device_type"])
                         success_count += 1
                     except Exception as e:
                         st.error(f"Failed to update Customer ID {data['id']}: {str(e)}")

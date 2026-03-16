@@ -9,7 +9,6 @@ from db.devices import get_device_by_id
 from db.customer import get_customer_by_id
 from db.templates import get_template_by_id
 from db.reports import get_report_by_id
-from juniper_service import get_system_info, connect_to_device, connect_via_jump_host, close_jump_connection, close_connection
 from datetime import datetime
 from groq import Groq
 import tempfile
@@ -25,6 +24,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib.pagesizes import A4
 from io import BytesIO
+from PIL import Image as PILImage
 
 load_dotenv()
 
@@ -38,7 +38,6 @@ def AI_report_summary(report):
             return None
 
         client = Groq(api_key=api_key)
-
         result = report["result"]
 
         user_prompt = """
@@ -101,6 +100,7 @@ Report Data:
 
 
 def _cli_table(text, cli_style, top_border=True, bottom_border=True):
+    """Create a styled CLI output table."""
     tbl = Table([[Preformatted(text, cli_style)]], colWidths=[16 * cm])
 
     cmds = [
@@ -121,7 +121,7 @@ def _cli_table(text, cli_style, top_border=True, bottom_border=True):
 
 
 def generate_pdf(report_id):
-
+    """Generate PDF report from report data."""
     report = get_report_by_id(report_id)
     customer = get_customer_by_id(report["customer_id"])
     device = get_device_by_id(report["device_id"])
@@ -133,16 +133,8 @@ def generate_pdf(report_id):
     template_desc = template.get("general_desc") or "No description provided"
     customer_logo = customer.get("images")
     host_logo_path = template.get("company_logo")
-
-    # Support jump host
-    jump_client = None
-    if customer["jump_host"] == 1:
-        jump_client, client = connect_via_jump_host(
-            customer["jump_host_ip"], customer["jump_host_username"], customer["jump_host_password"],
-            device["device_ip"], device["username"], device["password"]
-        )
-    else:
-        client = connect_to_device(device["device_ip"], device["username"], device["password"])
+    report_time = report["created_at"]
+    device_hostname = device["hostname"]
 
     buffer = BytesIO()
 
@@ -187,26 +179,30 @@ def generate_pdf(report_id):
 
     story = []
 
-    # Handle host logo
     host_tmp_path = None
-    if host_logo_path:
+    if host_logo_path and isinstance(host_logo_path, (bytes, bytearray)) and len(host_logo_path) > 0:
         try:
+            PILImage.open(BytesIO(host_logo_path)).verify()
+            
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
             tmp_file.write(host_logo_path)
             tmp_file.close()
             host_tmp_path = tmp_file.name
-        except Exception:
+        except Exception as e:
+            print(f"Host logo error: {e}")
             host_tmp_path = None
 
-    # Handle customer logo
     customer_tmp_path = None
-    if customer_logo:
+    if customer_logo and isinstance(customer_logo, (bytes, bytearray)) and len(customer_logo) > 0:
         try:
+            PILImage.open(BytesIO(customer_logo)).verify()
+            
             tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
             tmp_file.write(customer_logo)
             tmp_file.close()
             customer_tmp_path = tmp_file.name
-        except Exception:
+        except Exception as e:
+            print(f"Customer logo error: {e}")
             customer_tmp_path = None
 
     left_cell = Image(customer_tmp_path, width=3 * cm, height=3 * cm) if customer_tmp_path else Paragraph("", styles["BodyStyle"])
@@ -225,9 +221,9 @@ def generate_pdf(report_id):
     meta_data = [
         ["Customer", customer_name],
         ["Device Serial", device_serial],
-        ["Device Hostname", get_system_info(client)["hostname"]],
+        ["Device Hostname", device_hostname],
         ["Description", Paragraph(template_desc, styles["BodyStyle"])],
-        ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+        ["Generated", report_time.strftime("%Y-%m-%d %H:%M:%S")]
     ]
 
     meta_table = Table(meta_data, colWidths=[4 * cm, 12 * cm])
@@ -283,9 +279,6 @@ def generate_pdf(report_id):
         except Exception as e:
             print(f"AI summary section error: {e}")
 
-    # ----------------------------
-    # MANUAL SUMMARY SECTION
-    # ----------------------------
     if template.get("manual_summary_desc"):
         story.append(Paragraph("Manual Summary", styles["HeaderStyle"]))
         manual_table_data = template.get("manual_summary_table")
@@ -307,25 +300,23 @@ def generate_pdf(report_id):
             if table_rows:
                 summary_table = Table(table_rows, colWidths=[6 * cm, 10 * cm])
                 summary_table.setStyle(TableStyle([
-                    ("GRID",          (0, 0), (-1, -1), 0.7, colors.black),
-                    ("BACKGROUND",    (0, 0), (0, -1),  colors.lightgrey),
-                    ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-                    ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                    ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                    ("FONTSIZE",      (0, 0), (-1, -1), 9),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ]))
                 story.append(summary_table)
 
         story.append(Spacer(1, 15))
-        story.append(Paragraph(template["manual_summary_desc"], styles["BodyStyle"]))
+        formatted_manual_desc = template["manual_summary_desc"].replace('\n', '<br/>')
+        story.append(Paragraph(formatted_manual_desc, styles["BodyStyle"]))
         story.append(Spacer(1, 15))
         story.append(PageBreak())
 
-    # ----------------------------
-    # COMMAND OUTPUT SECTION
-    # ----------------------------
     results = report["result"]
 
     if isinstance(results, str):
@@ -341,8 +332,8 @@ def generate_pdf(report_id):
         story.append(Paragraph("No command results found.", styles["BodyStyle"]))
     else:
         command_entries = [r for r in results if isinstance(r, dict) and r.get("type") != "Header"]
-        command_count   = len(command_entries)
-        command_idx     = 0
+        command_count = len(command_entries)
+        command_idx = 0
 
         for result_data in results:
             if not isinstance(result_data, dict):
@@ -358,7 +349,7 @@ def generate_pdf(report_id):
             command_idx += 1
 
             cmd_description = result_data.get("description", "")
-            output          = result_data.get("output", "")
+            output = result_data.get("output", "")
 
             max_line_length = 90
             wrapped_lines = []
@@ -379,7 +370,7 @@ def generate_pdf(report_id):
             cli_flowables = []
             for i, batch_text in enumerate(batches):
                 is_first = (i == 0)
-                is_last  = (i == n - 1)
+                is_last = (i == n - 1)
                 cli_flowables.append(
                     _cli_table(batch_text, cli_style,
                                top_border=is_first,
@@ -401,12 +392,8 @@ def generate_pdf(report_id):
             if command_idx < command_count:
                 story.append(PageBreak())
 
-    # ----------------------------
-    # BUILD PDF
-    # ----------------------------
     doc.build(story)
 
-    # Clean up temp files
     if customer_tmp_path and os.path.exists(customer_tmp_path):
         try:
             os.unlink(customer_tmp_path)
@@ -421,9 +408,3 @@ def generate_pdf(report_id):
 
     buffer.seek(0)
     return buffer, f"Report_{template_name}_{device_serial}.pdf"
-
-    # Clean up connections
-    if jump_client:
-        close_jump_connection(jump_client, client)
-    else:
-        close_connection(client)
