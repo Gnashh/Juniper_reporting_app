@@ -68,6 +68,8 @@ def get_customer_options():
             "jump_host_password",
             "images",
             "device_type",
+            "jump_host_hostname",
+            "target_port",
         ],
     )
 

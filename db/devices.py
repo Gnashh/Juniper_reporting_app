@@ -26,7 +26,7 @@ def get_device_by_id(id):
     devices = cursor.fetchone()
     return devices
 
-def create_device(customer_id, serial_number, hostname, device_type, device_model, device_ip, username, password):
+def create_device(customer_id, serial_number, hostname, device_type, device_model, device_ip, device_port, username, password):
     """Insert a new device; validates customer exists. Returns new row id."""
     conn = connect_to_db()
     cursor = conn.cursor()
@@ -34,15 +34,21 @@ def create_device(customer_id, serial_number, hostname, device_type, device_mode
     if customer is None:
         return print("Customer does not exist")
     else:
-        cursor.execute("INSERT INTO devices (customer_id, serial_number, hostname, device_type, device_model, device_ip, username, password) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", (customer_id, serial_number, hostname, device_type, device_model, device_ip, username, password))
+        cursor.execute(
+            "INSERT INTO devices (customer_id, serial_number, hostname, device_type, device_model, device_ip, device_port, username, password) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (customer_id, serial_number, hostname, device_type, device_model, device_ip, device_port, username, password)
+        )
         conn.commit()
         return cursor.lastrowid
         
-def update_device(id, customer_id, serial_number, hostname, device_type, device_model, device_ip):
-    """Update device metadata (credentials are not changed by update)."""
+def update_device(id, customer_id, serial_number, hostname, device_type, device_model, device_ip, device_port, username, password):
+    """Update device metadata including credentials."""
     conn = connect_to_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE devices SET customer_id = %s, serial_number = %s, hostname = %s, device_type = %s, device_model = %s, device_ip = %s WHERE id = %s", (customer_id, serial_number, hostname, device_type, device_model, device_ip, id))
+    cursor.execute(
+        "UPDATE devices SET customer_id = %s, serial_number = %s, hostname = %s, device_type = %s, device_model = %s, device_ip = %s, device_port = %s, username = %s, password = %s WHERE id = %s",
+        (customer_id, serial_number, hostname, device_type, device_model, device_ip, device_port, username, password, id)
+    )
     conn.commit()
     conn.close()
     return cursor.rowcount

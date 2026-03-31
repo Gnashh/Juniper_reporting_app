@@ -10,6 +10,9 @@ CREATE TABLE customers (
     jump_host_ip VARCHAR(45),
     jump_host_username VARCHAR(255),
     jump_host_password VARCHAR(255),
+    jump_host_hostname VARCHAR(255),
+    target_port VARCHAR(10),
+    device_type VARCHAR(100),
     images LONGBLOB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

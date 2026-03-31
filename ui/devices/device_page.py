@@ -31,7 +31,9 @@ def show_device_page():
                     d.device_type,
                     d.device_model,
                     d.device_ip,
+                    d.device_port,
                     d.username,
+                    d.password,
                     d.created_at
                 FROM devices d
                 LEFT JOIN customers c ON d.customer_id = c.id
@@ -53,7 +55,9 @@ def show_device_page():
         "device_type": "Device Type",
         "device_model": "Device Model",
         "device_ip": "Device IP",
-        "username": "Username",
+        "device_port": "Device Port",
+        "username": "Device Username",
+        "password": "Device Password",
         "created_at": "Created At",
     })
     df_devices.insert(0, "Select", False)
@@ -65,9 +69,11 @@ def show_device_page():
         column_config={
             "Select": st.column_config.CheckboxColumn("Select", help="Select rows to delete", width="small"),
             "Customer ID": None,
+            "Device Port": None,
+            "Device Password": None,
         },
-        disabled=["Device ID", "Customer Name", "Serial Number", "Hostname", "Username",
-                   "Device Type", "Device Model", "Device IP", "Created At"],
+        disabled=["Device ID", "Customer Name", "Serial Number", "Hostname", "Device Username", "Device Password",
+                   "Device Type", "Device Model", "Device IP", "Device Port", "Created At"],
     )
 
     selected_rows = edited_df[edited_df["Select"] == True]
