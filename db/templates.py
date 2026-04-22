@@ -12,15 +12,15 @@ from db.customer import get_customer_by_id
 from datetime import datetime
 
 
-def create_template(name, description, command, customer_id, general_desc, manual_summary_desc=None, manual_summary_table=None, company_logo=None):
+def create_template(name, description, command, customer_id, general_desc, premade_report, manual_summary_desc=None, manual_summary_table=None, company_logo=None):
     """Insert a template; description and command are JSON arrays. Returns new row id."""
     conn = connect_to_db()
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO command_templates 
-           (name, description, command, customer_id, general_desc, manual_summary_desc, manual_summary_table, company_logo) 
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""", 
-        (name, json.dumps(description), json.dumps(command), customer_id, general_desc, manual_summary_desc, json.dumps(manual_summary_table) if manual_summary_table else None, company_logo)
+           (name, description, command, customer_id, general_desc, premade_report, manual_summary_desc, manual_summary_table, company_logo) 
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""", 
+        (name, json.dumps(description), json.dumps(command), customer_id, general_desc, premade_report, manual_summary_desc, json.dumps(manual_summary_table) if manual_summary_table else None, company_logo)
     )
     conn.commit()
     template_id = cursor.lastrowid
@@ -47,6 +47,7 @@ def get_templates_by_customer_id(customer_id):
             'created_at': template['created_at'],
             'general_desc': template['general_desc'],
             'update_time': template['update_time'],
+            'premade_report': template['premade_report'],
             'manual_summary_desc': template['manual_summary_desc'],
             'manual_summary_table': json.loads(template['manual_summary_table']) if isinstance(template['manual_summary_table'], str) else template['manual_summary_table'],
         })
@@ -89,6 +90,7 @@ def update_template(
     update_time,
     manual_summary_desc=None,
     manual_summary_table=None,
+    premade_report=None,
     company_logo=None
 ):
 
@@ -134,6 +136,7 @@ def update_template(
             update_time = %s,
             manual_summary_desc = %s,
             manual_summary_table = %s,
+            premade_report = %s,
             company_logo = %s
         WHERE id = %s
         """,
@@ -146,6 +149,7 @@ def update_template(
             update_time,
             manual_summary_desc,
             manual_summary_json,
+            premade_report,
             company_logo,
             id,
         ),

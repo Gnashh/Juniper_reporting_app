@@ -55,3 +55,4 @@ def delete_report(id):
     cursor.execute("DELETE FROM reports WHERE id = %s", (id,))
     conn.commit()
     return cursor.rowcount
+

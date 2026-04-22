@@ -1,3 +1,10 @@
+"""
+User Database Module
+======================
+CRUD operations for users.
+Users store username, password, full name, email, is_admin, created_at, last_login.
+"""
+
 import mysql.connector
 from db.connect_to_db import connect_to_db
 import bcrypt

@@ -42,6 +42,7 @@ CREATE TABLE command_templates (
     command JSON,
     customer_id INT NOT NULL,
     general_desc TEXT,
+    premade_report BOOLEAN DEFAULT FALSE,
     manual_summary_desc TEXT,
     manual_summary_table JSON,
     company_logo LONGBLOB,

@@ -69,7 +69,7 @@ def get_customer_options():
             "images",
             "device_type",
             "jump_host_hostname",
-            "target_port",
+            "jump_port",
         ],
     )
 
@@ -243,7 +243,12 @@ def add_template_dialog():
             st.error(f"Invalid image file: {str(e)}")
             company_logo = None
 
-    st.markdown("### Manual Summary")
+
+    st.markdown("### Premade Report")  
+    enable_manual_premade_report = st.toggle("Upload Report", value=False)
+    premade_report = 1 if enable_manual_premade_report else 0
+
+    st.markdown("### Manual Summary")    
 
     enable_summary = st.toggle("Enable Summary")
 
@@ -288,6 +293,7 @@ def add_template_dialog():
                 command=commands,
                 customer_id=customer_id,
                 general_desc=description,
+                premade_report=premade_report,
                 manual_summary_desc=summary_desc if enable_summary else None,
                 manual_summary_table=summary_table if enable_summary else None,
                 company_logo=company_logo,
