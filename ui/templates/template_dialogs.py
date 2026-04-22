@@ -418,6 +418,11 @@ def update_template_dialog(selected_templates):
                 st.error(f"Invalid image file: {str(e)}")
                 company_logo = None
 
+
+        st.markdown("### Premade Report")  
+        enable_manual_premade_report = st.toggle("Upload Report", value=False)
+        premade_report = 1 if enable_manual_premade_report else 0
+
         # -------------------------
         # Manual Summary Section
         # -------------------------
@@ -598,6 +603,7 @@ def update_template_dialog(selected_templates):
             "selected_customer": selected_customer,
             "company_logo": company_logo,
             "existing_logo": existing_logo,
+            "premade_report": premade_report,
             "enable_summary": enable_summary,
             "manual_summary_desc": manual_summary_desc,
             "manual_summary_table": manual_summary_table,
@@ -640,6 +646,7 @@ def update_template_dialog(selected_templates):
                     update_data["update_time"],
                     update_data["manual_summary_desc"] if update_data["enable_summary"] else None,
                     update_data["manual_summary_table"] if update_data["enable_summary"] else None,
+                    update_data["premade_report"],
                     final_logo,
                 )
 

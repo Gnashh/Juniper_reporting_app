@@ -1,13 +1,18 @@
+import re
 from db.templates import get_template_by_id
 
 def create_premade_report(device_id, customer_id, template_id, premade_report_file):
+    # Read and clean
     file_content = premade_report_file.read().decode('utf-8', errors='replace')
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    file_content = ansi_escape.sub('', file_content)
+    file_content = file_content.replace('\r', '')
+    file_content = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', file_content)
 
     template = get_template_by_id(template_id)
-    
-    # Extract outputs for found commands
     all_results = []
     
+    # Process template commands IN ORDER
     for item in template["command"]:
         if item.get("type") == "Header":
             all_results.append({
@@ -17,38 +22,27 @@ def create_premade_report(device_id, customer_id, template_id, premade_report_fi
             })
             continue
         
-        command = item.get("command", "")
+        cmd = item.get("command", "").strip()
         description = item.get("description", "")
         
-        if not command:
+        if not cmd:
             continue
         
-        # Search for command in file content
-        if command in file_content:
-            # Extract output between this command and next command/prompt
-            cmd_index = file_content.find(command)
-            
-            # Find where output ends (next command or CLI prompt)
-            output_start = cmd_index + len(command)
-            
-            # Look for next command or common CLI prompts
-            next_markers = ["\n" + cmd for cmd in [c.get("command", "") for c in template["command"] if c.get("command")]]
-            next_markers.extend(["\nuser@", "\nroot@", "\n>", "\n#"])
-            
-            output_end = len(file_content)
-            for marker in next_markers:
-                marker_pos = file_content.find(marker, output_start)
-                if marker_pos != -1 and marker_pos < output_end:
-                    output_end = marker_pos
-            
-            output = file_content[output_start:output_end].strip()
-            
+        # Search for this command in the log file
+        # Pattern: command appears after a prompt, optionally followed by | pipes
+        # Example: "user@host> show system uptime | no-more"
+        pattern = rf'[\w\-\.@]+\s*[>#]\s*{re.escape(cmd)}(?:\s*\|[^\n]*)?\s*\n(.*?)(?=[\w\-\.@]+\s*[>#]|$)'
+        match = re.search(pattern, file_content, re.DOTALL)
+        
+        if match:
+            output = match.group(1).strip()
             all_results.append({
                 "type": "Command",
-                "command": command,
+                "command": cmd,
                 "description": description,
                 "output": output,
                 "status": "success",
             })
+        # If command not found in log, skip it (don't add to results)
     
     return all_results
