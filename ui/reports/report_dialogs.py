@@ -74,13 +74,35 @@ def create_report_dialog():
     # File uploaders - only if premade_report
     uploaded_files = {}
     if template.get("premade_report") == 1 and device_id:
-        st.markdown("### Upload Log Files")
+        required_command = []
+        command_items = (
+            json.loads(template["command"])
+            if isinstance(template.get("command"), str)
+            else template.get("command", [])
+        )
+
+        for item in command_items:
+            cmd = item.get("command", "").strip()
+            if cmd:
+                required_command.append(cmd)
+
+        if required_command:
+            cmd_md = "\n".join([f"- `{c}`" for c in required_command])
+            st.markdown(f"### Upload Log Files with these commands:\n{cmd_md}")
+        else:
+            st.markdown("### Upload Log Files")
+
         for dev_id in device_id:
             device = get_device_by_id(dev_id)
+            st.markdown(
+                f"Upload .log file for <span style='color:#FFF700; padding:2px 6px; border-radius:3px; font-family:monospace;'>{device['hostname']}</span>",
+                unsafe_allow_html=True,
+            )
             uploaded_file = st.file_uploader(
-                f"Upload .log file for {device['hostname']}", 
+                "Upload .log file",
                 type=["log", "txt"],
-                key=f"upload_{dev_id}"
+                key=f"upload_{dev_id}",
+                label_visibility="collapsed",
             )
             if uploaded_file:
                 uploaded_files[dev_id] = uploaded_file
